@@ -1,0 +1,14 @@
+# Ignore the aux_files directory (likely auxiliary or temporary files)
+aux_files/
+
+# Ignore the myenv directory (virtual environment)
+myenv/
+
+# Ignore processed data directory (generated during preprocessing)
+processed/
+
+# Ignore test data directory (original or preprocessed test data)
+test/
+
+# Ignore train data directory (original or preprocessed training data)
+train/
