@@ -10,7 +10,6 @@ from shapely.geometry import box
 import shutil
 from shapely.geometry import shape
 
-
 train_image_dir = r"./train/PS-RGB_tiled"
 train_geojson_dir = r"./train/geojson_aircraft_tiled"
 test_image_dir = r"./test/PS-RGB_tiled"
@@ -19,8 +18,12 @@ test_geojson_dir = r"./test/geojson_aircraft_tiled"
 output_dir = './processed'
 coco_train_path = os.path.join(output_dir, 'train_coco.yaml')
 coco_test_path = os.path.join(output_dir, 'test_coco.yaml')
+yolo_train_labels = os.path.join(output_dir, 'train/labels')
+yolo_test_labels = os.path.join(output_dir, 'test/labels')
 
 os.makedirs(output_dir, exist_ok=True)
+os.makedirs(yolo_train_labels, exist_ok=True)
+os.makedirs(yolo_test_labels, exist_ok=True)
 
 # Step 1: Analyze Dataset
 def analyze_dataset():
@@ -73,88 +76,70 @@ def preprocess_images(image_dir, output_dir, size=(256, 256)):
         output_path = os.path.join(output_dir, img_file)
         cv2.imwrite(output_path, resized_image)
 
-def geojson_to_yolo_yaml(image_dir, geojson_dir, output_yaml_path):
-    """Convert GeoJSON annotations to YAML format for YOLOv8."""
-    # Initialize YAML structure
-    yaml_annotations = {
-        "images": [],
-        "annotations": [],
-        "categories": [{"id": 0, "name": "aircraft"}]  # YOLO starts class IDs from 0
-    }
+def convert_geojson_to_yolo(geojson_dir, image_dir, output_label_dir):
+    """Convert GeoJSON annotations to YOLO format."""
+    os.makedirs(output_label_dir, exist_ok=True)
+    
+    for geojson_file in tqdm(os.listdir(geojson_dir)):
+        if not geojson_file.endswith('.geojson'):
+            continue
 
-    annotation_id = 0
-    image_id = 0
-
-    # Loop through all images in the directory
-    for img_file in tqdm(os.listdir(image_dir)):
-        if not img_file.lower().endswith(('.png', '.jpg', '.jpeg')):
-            continue  # Skip non-image files
-
-        img_path = os.path.join(image_dir, img_file)
-        geojson_file = os.path.join(geojson_dir, img_file.replace('.png', '.geojson'))
+        geojson_path = os.path.join(geojson_dir, geojson_file)
+        image_name = geojson_file.replace('.geojson', '.png')
+        image_path = os.path.join(image_dir, image_name)
         
-        if not os.path.exists(geojson_file):
-            print(f"GeoJSON not found for {img_file}, skipping...")
+        if not os.path.exists(image_path):
+            print(f"Image not found for {image_name}, skipping...")
             continue
-
-        # Load image to get its dimensions
-        image = cv2.imread(img_path)
+        
+        # Load image to get dimensions
+        image = cv2.imread(image_path)
         if image is None:
-            print(f"Error loading image {img_file}, skipping...")
+            print(f"Error loading image {image_name}, skipping...")
             continue
-        height, width, _ = image.shape
+        img_height, img_width, _ = image.shape
 
-        # Add image information
-        image_id += 1
-        yaml_annotations["images"].append({
-            "id": image_id,
-            "file_name": img_file,
-            "width": width,
-            "height": height
-        })
-
-        # Read the corresponding GeoJSON file
+        # Read GeoJSON file
         try:
-            with open(geojson_file, 'r') as f:
+            with open(geojson_path, 'r') as f:
                 geojson_data = json.load(f)
         except Exception as e:
             print(f"Error reading GeoJSON {geojson_file}: {e}")
             continue
 
-        # Iterate through the features in the GeoJSON file
-        for feature in geojson_data.get('features', []):
-            geometry = feature.get('geometry')
-            if geometry is None or geometry['type'] != 'Polygon':
-                continue  # Only process polygons
+        # Create corresponding YOLO label file
+        label_path = os.path.join(output_label_dir, f"{os.path.splitext(image_name)[0]}.txt")
+        
+        with open(label_path, 'w') as label_file:
+            for feature in geojson_data.get('features', []):
+                geometry = feature.get('geometry')
+                if geometry is None or geometry['type'] != 'Polygon':
+                    continue
 
-            # Extract polygon coordinates
-            coordinates = feature['geometry']['coordinates'][0]  # Get the first ring of the polygon
-            flat_coordinates = [coord for point in coordinates for coord in point]
+                # Extract bounding box
+                xs = [coord[0] for coord in geometry['coordinates'][0]]
+                ys = [coord[1] for coord in geometry['coordinates'][0]]
+                x_min, y_min, x_max, y_max = min(xs), min(ys), max(xs), max(ys)
 
-            # Calculate bounding box from coordinates
-            xs = [point[0] for point in coordinates]
-            ys = [point[1] for point in coordinates]
-            minx, miny, maxx, maxy = min(xs), min(ys), max(xs), max(ys)
-            bbox = [minx, miny, maxx - minx, maxy - miny]
-            area = bbox[2] * bbox[3]
+                # Convert to YOLO format
+                # Normalize the values to [0, 1]
+                center_x = ((x_min + x_max) / 2) / img_width
+                center_y = ((y_min + y_max) / 2) / img_height
+                width = (x_max - x_min) / img_width
+                height = (y_max - y_min) / img_height
 
-            # Add annotation linked to the current image
-            annotation_id += 1
-            yaml_annotations["annotations"].append({
-                "id": annotation_id,
-                "image_id": image_id,  # Link annotation to the current image
-                "category_id": 0,      # The category ID should match the categories section (0 for 'aircraft')
-                "bbox": bbox,
-                "area": area,
-                "iscrowd": 0,
-                "segmentation": [flat_coordinates]
-            })
-    
-    # Save to output YAML file
-    with open(output_yaml_path, 'w') as yaml_file:
-        yaml.dump(yaml_annotations, yaml_file, default_flow_style=False)
-    print(f"YAML annotations saved to {output_yaml_path}")
-    
+                # Ensure that no values are negative or greater than 1
+                center_x = max(0, min(1, center_x))
+                center_y = max(0, min(1, center_y))
+                width = max(0, min(1, width))
+                height = max(0, min(1, height))
+
+                # Write annotation to file
+                label_file.write(f"0 {center_x} {center_y} {width} {height}\n")
+
+        print(f"YOLO labels saved to {label_path}")
+
+
 # Step 6: Move auxiliary files
 def move_aux_files(src_dir, dest_dir):
     os.makedirs(dest_dir, exist_ok=True)
@@ -165,16 +150,15 @@ def move_aux_files(src_dir, dest_dir):
 
 # Step 7: Run the analysis, preprocessing, and annotation conversion
 if __name__ == "__main__":
-    # Analyze dataset
-    # analyze_dataset()
-
-    # Preprocess images
+    analyze_dataset()
+    
+    # # Preprocess images
     # preprocess_images(train_image_dir, './processed/train_images')
     # preprocess_images(test_image_dir, './processed/test_images')
 
-    # Convert GeoJSON to COCO format for training and testing sets
-    geojson_to_yolo_yaml(train_image_dir, train_geojson_dir, coco_train_path)
-    geojson_to_yolo_yaml(test_image_dir, test_geojson_dir, coco_test_path)
+    # Convert GeoJSON to YOLO format
+    convert_geojson_to_yolo(train_geojson_dir, train_image_dir, yolo_train_labels)
+    convert_geojson_to_yolo(test_geojson_dir, test_image_dir, yolo_test_labels)
 
     # Move .aux.xml files to a separate folder
     move_aux_files(train_geojson_dir, './aux_files/train/')

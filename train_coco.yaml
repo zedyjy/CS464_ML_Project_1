@@ -1,5 +1,11 @@
-train: './processed/train_images'  # Path to your training images
-val: './processed/test_images'      # Path to your validation images
-test: './processed/test_images'      # Path to your validation images
-nc: 1                              # Number of classes (since you are detecting airplanes, it's 1)
-names: ['aircraft']                # Class names
+train: processed/train/images  # Path to the training images
+val: processed/test/images     # Path to the validation images
+
+# Class names (modify this list according to your classes)
+names:
+  0: "aircraft"  # Example class
+
+# Paths to labels (YOLO expects labels to be in the same structure as images)
+labels:
+  train: processed/train/labels  # Path to the training labels
+  val: processed/test/labels    # Path to the validation labels
