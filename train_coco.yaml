@@ -1,0 +1,5 @@
+train: './processed/train_images'  # Path to your training images
+val: './processed/test_images'      # Path to your validation images
+test: './processed/test_images'      # Path to your validation images
+nc: 1                              # Number of classes (since you are detecting airplanes, it's 1)
+names: ['aircraft']                # Class names
