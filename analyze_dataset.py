@@ -71,7 +71,7 @@ def preprocess_images(image_dir, output_dir, size=(256, 256)):
         cv2.imwrite(output_path, resized_image)
 
 
-# Step 5: Convert GeoJSON to COCO format
+# Function to convert GeoJSON to COCO format
 def geojson_to_coco(image_dir, geojson_dir, output_path):
     """Convert GeoJSON annotations to COCO format."""
     # Initialize COCO structure
@@ -123,7 +123,7 @@ def geojson_to_coco(image_dir, geojson_dir, output_path):
         for feature in geojson_data.get('features', []):
             if feature.get('geometry') is None or feature['geometry']['type'] != 'Polygon':
                 continue
-            
+
             # Extract polygon coordinates
             coordinates = feature['geometry']['coordinates'][0]  # Get the first ring of the polygon
             flat_coordinates = [coord for point in coordinates for coord in point]
@@ -135,23 +135,23 @@ def geojson_to_coco(image_dir, geojson_dir, output_path):
             bbox = [minx, miny, maxx - minx, maxy - miny]
             area = bbox[2] * bbox[3]
 
-            # Add annotation linked to the current image
-            annotation_id += 1
-            coco_annotations["annotations"].append({
-                "id": annotation_id,
-                "image_id": image_id,  # Link annotation to the correct image
-                "category_id": 2,      # The category ID should match the categories section
-                "bbox": bbox,
-                "area": area,
-                "iscrowd": 0,
-                "segmentation": [flat_coordinates]
-            })
+        # Add annotation linked to the current image
+        annotation_id += 1
+        coco_annotations["annotations"].append({
+            "id": annotation_id,
+            "image_id": image_id,  # Link annotation to the current image
+            "category_id": 2,      # The category ID should match the categories section
+            "bbox": bbox,
+            "area": area,
+            "iscrowd": 0,
+            "segmentation": [flat_coordinates]
+        })
     
     # Save to output JSON file
     with open(output_path, 'w') as json_file:
         json.dump(coco_annotations, json_file, indent=4)
     print(f"COCO annotations saved to {output_path}")
-    
+
     
 # Step 6: Move auxiliary files
 def move_aux_files(src_dir, dest_dir):
