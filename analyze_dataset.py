@@ -70,23 +70,27 @@ def preprocess_images(image_dir, output_dir, size=(256, 256)):
         output_path = os.path.join(output_dir, img_file)
         cv2.imwrite(output_path, resized_image)
 
+
+# Step 5: Convert GeoJSON to COCO format
 def geojson_to_coco(image_dir, geojson_dir, output_path):
+    """Convert GeoJSON annotations to COCO format."""
+    # Initialize COCO structure
     coco_annotations = {
         "images": [],
         "annotations": [],
-        "categories": [{"id": 1, "name": "aircraft"}]
+        "categories": [{"id": 2, "name": "aircraft", "supercategory": "vehicle"}]
     }
     annotation_id = 0
     image_id = 0
 
+    # Loop through all images in the directory
     for img_file in tqdm(os.listdir(image_dir)):
         if not is_image_file(img_file):
             continue
 
         img_path = os.path.join(image_dir, img_file)
         geojson_file = os.path.join(geojson_dir, img_file.replace('.png', '.geojson'))
-
-        # Check if corresponding GeoJSON file exists
+        
         if not os.path.exists(geojson_file):
             print(f"GeoJSON not found for {img_file}, skipping...")
             continue
@@ -96,10 +100,9 @@ def geojson_to_coco(image_dir, geojson_dir, output_path):
         if image is None:
             print(f"Error loading image {img_file}, skipping...")
             continue
-        
         height, width, _ = image.shape
 
-        # Add image info to the COCO dataset
+        # Add image information
         image_id += 1
         coco_annotations["images"].append({
             "id": image_id,
@@ -108,40 +111,49 @@ def geojson_to_coco(image_dir, geojson_dir, output_path):
             "height": height
         })
 
-        # Load the corresponding GeoJSON file
+        # Read the corresponding GeoJSON file
         try:
-            gdf = gpd.read_file(geojson_file)
+            with open(geojson_file, 'r') as f:
+                geojson_data = json.load(f)
         except Exception as e:
             print(f"Error reading GeoJSON {geojson_file}: {e}")
             continue
 
-        # Process each feature in the GeoJSON
-        for _, row in gdf.iterrows():
-            if row['geometry'] is None or not row['geometry'].is_valid:
-                print(f"Invalid geometry in {geojson_file}, skipping...")
+        # Iterate through the features in the GeoJSON file
+        for feature in geojson_data.get('features', []):
+            if feature.get('geometry') is None or feature['geometry']['type'] != 'Polygon':
                 continue
+            
+            # Extract polygon coordinates
+            coordinates = feature['geometry']['coordinates'][0]  # Get the first ring of the polygon
+            flat_coordinates = [coord for point in coordinates for coord in point]
 
-            # Extract bounding box from geometry
-            minx, miny, maxx, maxy = row['geometry'].bounds
+            # Calculate bounding box from coordinates
+            xs = [point[0] for point in coordinates]
+            ys = [point[1] for point in coordinates]
+            minx, miny, maxx, maxy = min(xs), min(ys), max(xs), max(ys)
             bbox = [minx, miny, maxx - minx, maxy - miny]
             area = bbox[2] * bbox[3]
 
-            # Add annotation to the COCO dataset
+            # Add annotation linked to the current image
             annotation_id += 1
             coco_annotations["annotations"].append({
                 "id": annotation_id,
-                "image_id": image_id,
-                "category_id": 1,
+                "image_id": image_id,  # Link annotation to the correct image
+                "category_id": 2,      # The category ID should match the categories section
                 "bbox": bbox,
                 "area": area,
-                "iscrowd": 0
+                "iscrowd": 0,
+                "segmentation": [flat_coordinates]
             })
-
-    # Save the COCO JSON file
-    with open(output_path, 'w') as f:
-        json.dump(coco_annotations, f, indent=4)
-    print(f"Saved COCO annotations to {output_path}")
-
+    
+    # Save to output JSON file
+    with open(output_path, 'w') as json_file:
+        json.dump(coco_annotations, json_file, indent=4)
+    print(f"COCO annotations saved to {output_path}")
+    
+    
+# Step 6: Move auxiliary files
 def move_aux_files(src_dir, dest_dir):
     os.makedirs(dest_dir, exist_ok=True)
     for file in os.listdir(src_dir):
@@ -149,13 +161,14 @@ def move_aux_files(src_dir, dest_dir):
             shutil.move(os.path.join(src_dir, file), os.path.join(dest_dir, file))
             print(f"Moved: {file}")
 
-# Step 6: Run the analysis, preprocessing, and annotation conversion
+# Step 7: Run the analysis, preprocessing, and annotation conversion
 if __name__ == "__main__":
-    analyze_dataset()
+    # Analyze dataset
+    # analyze_dataset()
 
     # Preprocess images
-    preprocess_images(train_image_dir, './processed/train_images')
-    preprocess_images(test_image_dir, './processed/test_images')
+    # preprocess_images(train_image_dir, './processed/train_images')
+    # preprocess_images(test_image_dir, './processed/test_images')
 
     # Convert GeoJSON to COCO format for training and testing sets
     geojson_to_coco(train_image_dir, train_geojson_dir, coco_train_path)
