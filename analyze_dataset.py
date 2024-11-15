@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import cv2
 from tqdm import tqdm
 from PIL import Image
@@ -10,14 +11,14 @@ import shutil
 from shapely.geometry import shape
 
 
-train_image_dir = r"C:/Users/FURKAN/train/PS-RGB_tiled"
-train_geojson_dir = r"C:/Users/FURKAN/train/geojson_aircraft_tiled"
-#test_image_dir = r"C:/Users/FURKAN/test/PS-RGB_tiled"
-#test_geojson_dir = r"C:/Users/FURKAN/test/geojson_aircraft_tiled"
+train_image_dir = r"./train/PS-RGB_tiled"
+train_geojson_dir = r"./train/geojson_aircraft_tiled"
+test_image_dir = r"./test/PS-RGB_tiled"
+test_geojson_dir = r"./test/geojson_aircraft_tiled"
 
 output_dir = './processed'
-coco_train_path = os.path.join(output_dir, 'train_coco.json')
-coco_test_path = os.path.join(output_dir, 'test_coco.json')
+coco_train_path = os.path.join(output_dir, 'train_coco.yaml')
+coco_test_path = os.path.join(output_dir, 'test_coco.yaml')
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -72,90 +73,87 @@ def preprocess_images(image_dir, output_dir, size=(256, 256)):
         output_path = os.path.join(output_dir, img_file)
         cv2.imwrite(output_path, resized_image)
 
-def geojson_to_coco(image_dir, geojson_dir, output_path):
-    """
-    Convert GeoJSON annotations to COCO-like hierarchical format, grouping annotations by image.
+def geojson_to_yolo_yaml(image_dir, geojson_dir, output_yaml_path):
+    """Convert GeoJSON annotations to YAML format for YOLOv8."""
+    # Initialize YAML structure
+    yaml_annotations = {
+        "images": [],
+        "annotations": [],
+        "categories": [{"id": 0, "name": "aircraft"}]  # YOLO starts class IDs from 0
+    }
 
-    Args:
-        image_dir (str): Path to the directory containing images.
-        geojson_dir (str): Path to the directory containing GeoJSON files.
-        output_path (str): Path to save the output COCO JSON file.
-    """
-    hierarchical_format = {}
+    annotation_id = 0
+    image_id = 0
 
-    # Define categories (these will be repeated for each image if needed)
-    categories = [{"id": 1, "name": "aircraft", "supercategory": "object"}]
+    # Loop through all images in the directory
+    for img_file in tqdm(os.listdir(image_dir)):
+        if not img_file.lower().endswith(('.png', '.jpg', '.jpeg')):
+            continue  # Skip non-image files
 
-    annotation_id = 1
-    image_id = 1  # Start with an incremental image ID
-    for image_file in tqdm(os.listdir(image_dir)):
-        if not is_image_file(image_file):
+        img_path = os.path.join(image_dir, img_file)
+        geojson_file = os.path.join(geojson_dir, img_file.replace('.png', '.geojson'))
+        
+        if not os.path.exists(geojson_file):
+            print(f"GeoJSON not found for {img_file}, skipping...")
             continue
 
-        # Image metadata
-        image_path = os.path.join(image_dir, image_file)
-        image = cv2.imread(image_path)
+        # Load image to get its dimensions
+        image = cv2.imread(img_path)
         if image is None:
+            print(f"Error loading image {img_file}, skipping...")
             continue
         height, width, _ = image.shape
 
-        # Add image entry with categories included
-        hierarchical_format[image_id] = {
+        # Add image information
+        image_id += 1
+        yaml_annotations["images"].append({
             "id": image_id,
-            "file_name": image_file,
-            "height": height,
+            "file_name": img_file,
             "width": width,
-            "categories": categories,  # Add categories here
-            "annotations": []
-        }
+            "height": height
+        })
 
-        # Corresponding GeoJSON
-        geojson_file = os.path.join(geojson_dir, f"{os.path.splitext(image_file)[0]}.geojson")
-        if not os.path.exists(geojson_file):
+        # Read the corresponding GeoJSON file
+        try:
+            with open(geojson_file, 'r') as f:
+                geojson_data = json.load(f)
+        except Exception as e:
+            print(f"Error reading GeoJSON {geojson_file}: {e}")
             continue
 
-        with open(geojson_file, 'r') as f:
-            geojson_data = json.load(f)
+        # Iterate through the features in the GeoJSON file
+        for feature in geojson_data.get('features', []):
+            geometry = feature.get('geometry')
+            if geometry is None or geometry['type'] != 'Polygon':
+                continue  # Only process polygons
 
-        # Process features in GeoJSON
-        for feature in geojson_data.get("features", []):
-            geometry = feature.get("geometry")
-            if geometry is None or geometry["type"].lower() != "polygon":
-                continue
+            # Extract polygon coordinates
+            coordinates = feature['geometry']['coordinates'][0]  # Get the first ring of the polygon
+            flat_coordinates = [coord for point in coordinates for coord in point]
 
-            polygon = shape(geometry)
-            if not polygon.is_valid:
-                continue
+            # Calculate bounding box from coordinates
+            xs = [point[0] for point in coordinates]
+            ys = [point[1] for point in coordinates]
+            minx, miny, maxx, maxy = min(xs), min(ys), max(xs), max(ys)
+            bbox = [minx, miny, maxx - minx, maxy - miny]
+            area = bbox[2] * bbox[3]
 
-            segmentation = [list(np.array(polygon.exterior.coords).ravel())]
-            x_min, y_min, x_max, y_max = polygon.bounds
-            bbox = [x_min, y_min, x_max - x_min, y_max - y_min]
-
-            # Add annotation to the image entry
-            hierarchical_format[image_id]["annotations"].append({
-                "id": annotation_id,
-                "category_id": 1,
-                "segmentation": segmentation,
-                "area": polygon.area,
-                "bbox": bbox,
-                "iscrowd": 0
-            })
+            # Add annotation linked to the current image
             annotation_id += 1
-
-        # Increment the image ID for the next file
-        image_id += 1
-
-    # Convert the dictionary format to a list of images
-    coco_output = {
-        "images": list(hierarchical_format.values())
-    }
-
-    # Save to file
-    with open(output_path, 'w') as f:
-        json.dump(coco_output, f, indent=4)
-    print(f"COCO-like hierarchical annotations saved to {output_path}")
-
-
+            yaml_annotations["annotations"].append({
+                "id": annotation_id,
+                "image_id": image_id,  # Link annotation to the current image
+                "category_id": 0,      # The category ID should match the categories section (0 for 'aircraft')
+                "bbox": bbox,
+                "area": area,
+                "iscrowd": 0,
+                "segmentation": [flat_coordinates]
+            })
+    
+    # Save to output YAML file
+    with open(output_yaml_path, 'w') as yaml_file:
+        yaml.dump(yaml_annotations, yaml_file, default_flow_style=False)
+    print(f"YAML annotations saved to {output_yaml_path}")
     
 # Step 6: Move auxiliary files
 def move_aux_files(src_dir, dest_dir):
@@ -175,9 +173,9 @@ if __name__ == "__main__":
     # preprocess_images(test_image_dir, './processed/test_images')
 
     # Convert GeoJSON to COCO format for training and testing sets
-    geojson_to_coco(train_image_dir, train_geojson_dir, coco_train_path)
-    #geojson_to_coco(test_image_dir, test_geojson_dir, coco_test_path)
+    geojson_to_yolo_yaml(train_image_dir, train_geojson_dir, coco_train_path)
+    geojson_to_yolo_yaml(test_image_dir, test_geojson_dir, coco_test_path)
 
     # Move .aux.xml files to a separate folder
     move_aux_files(train_geojson_dir, './aux_files/train/')
-    #move_aux_files(test_geojson_dir, './aux_files/test/')
+    move_aux_files(test_geojson_dir, './aux_files/test/')
