@@ -10,20 +10,24 @@ from shapely.geometry import box
 import shutil
 from shapely.geometry import shape
 
-train_image_dir = r"./train/PS-RGB_tiled"
-train_geojson_dir = r"./train/geojson_aircraft_tiled"
-test_image_dir = r"./test/PS-RGB_tiled"
-test_geojson_dir = r"./test/geojson_aircraft_tiled"
+train_image_dir = r"./raw/train/PS-RGB_tiled"
+train_geojson_dir = r"./raw/train/geojson_aircraft_tiled"
+test_image_dir = r"./raw/test/PS-RGB_tiled"
+test_geojson_dir = r"./raw/test/geojson_aircraft_tiled"
 
 output_dir = './processed'
 coco_train_path = os.path.join(output_dir, 'train_coco.yaml')
 coco_test_path = os.path.join(output_dir, 'test_coco.yaml')
 yolo_train_labels = os.path.join(output_dir, 'train/labels')
 yolo_test_labels = os.path.join(output_dir, 'test/labels')
+yolo_train_images = os.path.join(output_dir, 'train/images')
+yolo_test_images = os.path.join(output_dir, 'test/images')
 
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(yolo_train_labels, exist_ok=True)
+os.makedirs(yolo_train_images, exist_ok=True)
 os.makedirs(yolo_test_labels, exist_ok=True)
+os.makedirs(yolo_test_images, exist_ok=True)
 
 # Step 1: Analyze Dataset
 def analyze_dataset():
@@ -59,7 +63,7 @@ def preprocess_images(image_dir, output_dir, size=(256, 256)):
     os.makedirs(output_dir, exist_ok=True)
     for img_file in tqdm(os.listdir(image_dir)):
         if not is_image_file(img_file):
-            print(f"Skipping non-image file: {img_file}")
+            # print(f"Skipping non-image file: {img_file}")
             continue
 
         img_path = os.path.join(image_dir, img_file)
@@ -137,7 +141,7 @@ def convert_geojson_to_yolo(geojson_dir, image_dir, output_label_dir):
                 # Write annotation to file
                 label_file.write(f"0 {center_x} {center_y} {width} {height}\n")
 
-        print(f"YOLO labels saved to {label_path}")
+        #print(f"YOLO labels saved to {label_path}")
 
 
 # Step 6: Move auxiliary files
@@ -153,13 +157,17 @@ if __name__ == "__main__":
     analyze_dataset()
     
     # # Preprocess images
-    # preprocess_images(train_image_dir, './processed/train_images')
-    # preprocess_images(test_image_dir, './processed/test_images')
+    print("Preprocessing train images...")
+    preprocess_images(train_image_dir, yolo_train_images)
+    print("Preprocessing test images...")
+    preprocess_images(test_image_dir, yolo_test_images)
 
     # Convert GeoJSON to YOLO format
+    print("Preprocessing train GeoJSON files...")
     convert_geojson_to_yolo(train_geojson_dir, train_image_dir, yolo_train_labels)
+    print("Preprocessing test GeoJSON files...")
     convert_geojson_to_yolo(test_geojson_dir, test_image_dir, yolo_test_labels)
 
     # Move .aux.xml files to a separate folder
-    move_aux_files(train_geojson_dir, './aux_files/train/')
-    move_aux_files(test_geojson_dir, './aux_files/test/')
+    move_aux_files(train_geojson_dir, './processed/aux_files/train/')
+    move_aux_files(test_geojson_dir, './processed/aux_files/test/')
