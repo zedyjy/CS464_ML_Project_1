@@ -1,11 +1,8 @@
 import os
 import json
-import yaml
 import cv2
 from tqdm import tqdm
 from PIL import Image
-import numpy as np
-import geopandas as gpd
 from shapely.geometry import box
 import shutil
 from shapely.geometry import shape
@@ -16,8 +13,6 @@ test_image_dir = r"./raw/test/PS-RGB_tiled"
 test_geojson_dir = r"./raw/test/geojson_aircraft_tiled"
 
 output_dir = './processed'
-coco_train_path = os.path.join(output_dir, 'train_coco.yaml')
-coco_test_path = os.path.join(output_dir, 'test_coco.yaml')
 yolo_train_labels = os.path.join(output_dir, 'train/labels')
 yolo_test_labels = os.path.join(output_dir, 'test/labels')
 yolo_train_images = os.path.join(output_dir, 'train/images')
