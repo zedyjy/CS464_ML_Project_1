@@ -1,4 +1,5 @@
 # Ignore the myenv directory (virtual environment)
+venv/
 myenv/
 
 # Ignore processed data directory (generated during preprocessing)
@@ -6,3 +7,7 @@ processed/
 
 # Ignore raw data directory (original or preprocessed test data)
 raw/
+
+# Ignore model directory (generated during training)
+yolov8n.pt
+runs/
