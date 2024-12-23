@@ -1,0 +1,11 @@
+train: processed/train/images  # Path to the training images
+val: processed/test/images     # Path to the validation images
+
+# Class names (modify this list according to your classes)
+names:
+  0: "aircraft"  # Example class
+
+# Paths to labels (YOLO expects labels to be in the same structure as images)
+labels:
+  train: processed/train/labels  # Path to the training labels
+  val: processed/test/labels    # Path to the validation labels

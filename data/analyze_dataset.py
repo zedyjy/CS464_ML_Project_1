@@ -1,6 +1,5 @@
 import os
 import json
-import yaml
 import cv2
 from tqdm import tqdm
 from PIL import Image
