@@ -6,3 +6,6 @@ processed/
 
 # Ignore raw data directory (original or preprocessed test data)
 raw/
+
+# Ignore the results directory (generated during training)
+results/
