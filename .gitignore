@@ -1,0 +1,12 @@
+# Ignore the myenv directory (virtual environment)
+venv/
+myenv/
+
+# Ignore processed data directory (generated during preprocessing)
+data/processed/
+
+# Ignore raw data directory (original or preprocessed test data)
+data/raw/
+
+# Ignore results directory (generated during training)
+results/
