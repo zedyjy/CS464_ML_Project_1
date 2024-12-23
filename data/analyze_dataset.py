@@ -7,12 +7,12 @@ from shapely.geometry import box
 import shutil
 from shapely.geometry import shape
 
-train_image_dir = r"./raw/train/PS-RGB_tiled"
-train_geojson_dir = r"./raw/train/geojson_aircraft_tiled"
-test_image_dir = r"./raw/test/PS-RGB_tiled"
-test_geojson_dir = r"./raw/test/geojson_aircraft_tiled"
+train_image_dir = r"./data/raw/train/PS-RGB_tiled"
+train_geojson_dir = r"./data/raw/train/geojson_aircraft_tiled"
+test_image_dir = r"./data/raw/test/PS-RGB_tiled"
+test_geojson_dir = r"./data/raw/test/geojson_aircraft_tiled"
 
-output_dir = './processed'
+output_dir = './data/processed'
 yolo_train_labels = os.path.join(output_dir, 'train/labels')
 yolo_test_labels = os.path.join(output_dir, 'test/labels')
 yolo_train_images = os.path.join(output_dir, 'train/images')
@@ -162,7 +162,3 @@ if __name__ == "__main__":
     convert_geojson_to_yolo(train_geojson_dir, train_image_dir, yolo_train_labels)
     print("Preprocessing test GeoJSON files...")
     convert_geojson_to_yolo(test_geojson_dir, test_image_dir, yolo_test_labels)
-
-    # Move .aux.xml files to a separate folder
-    move_aux_files(train_geojson_dir, './processed/aux_files/train/')
-    move_aux_files(test_geojson_dir, './processed/aux_files/test/')
