@@ -20,7 +20,65 @@ def parse_geo_transform(aux_path):
     root = tree.getroot()
     geo_transform = root.find("GeoTransform").text.strip().split(",")
     geo_transform = [float(value) for value in geo_transform]
+    
+    # print(f"GeoTransform: {geo_transform}")
     return geo_transform
+
+def read_geojson(geojson_path):
+    """
+    Read and parse GeoJSON file.
+    """
+    with open(geojson_path, 'r') as f:
+        data = json.load(f)
+        
+    if not data['features']:
+        coords = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # Dummy coordinates
+        features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
+    else:
+        first_feature = data['features'][0]
+        coords = first_feature['geometry']['coordinates']
+        
+        # Ensure `coords` is a list of tuples/lists
+        if not isinstance(coords, list) or not all(isinstance(pt, (list, tuple)) and len(pt) == 2 for pt in coords[0]):
+            raise ValueError(f"Invalid GeoJSON coordinates: {coords}")
+        
+        coords = coords[0]  # Extract the first polygon
+        
+        xs = [pt[0] for pt in coords]
+        ys = [pt[1] for pt in coords]
+        
+        if not xs or not ys:
+            coords = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # Dummy coordinates
+            features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
+        else:
+            x_min, x_max = min(xs), max(xs)
+            y_min, y_max = min(ys), max(ys)
+        
+        # Extract additional properties
+        props = first_feature.get('properties', {})
+        length = props.get('length', 0.0)
+        wingspan = props.get('wingspan', 0.0)
+        area = props.get('area', 0.0)
+
+        # Handle categorical features
+        wing_type_str = props.get('wing_type', 'other')
+        wing_position_str = props.get('wing_position', 'other')
+
+        wing_type_code = 0 if wing_type_str == 'straight' else (1 if wing_type_str == 'swept' else 2)
+        wing_position_code = 0 if wing_position_str == 'high mounted' else (1 if 'low' in wing_position_str or 'mid' in wing_position_str else 2)
+
+        canard = 1 if props.get('canards', 'no') == 'yes' else 0
+        num_engines = props.get('num_engines', 0)
+        num_tailfins = props.get('num_tail_fins', 0)
+        faa_class = props.get('faa_wingspan_class', 0)
+
+        features = [length, wingspan, area, wing_type_code, wing_position_code, canard, num_engines, num_tailfins, faa_class]
+    
+    # print(f"GeoJSON Coords: {coords}")
+    # print(f"GeoJSON Features: {features}")
+    return coords, features
+
+                
 
 def geo_to_pixel(lon, lat, geo_transform, image_width, image_height):
     """
@@ -33,38 +91,24 @@ def geo_to_pixel(lon, lat, geo_transform, image_width, image_height):
     # Clamp to image dimensions
     x_pixel = max(0, min(x_pixel, image_width - 1))
     y_pixel = max(0, min(y_pixel, image_height - 1))
-
+    
+    # print(f"Pixel Coordinates: x={x_pixel}, y={y_pixel}")
     return x_pixel, y_pixel
 
 
-def geojson_to_pixel_bboxes(geojson_path, geo_transform):
+def geojson_to_pixel_bboxes(coords, geo_transform, image_width, image_height):
     """
     Convert GeoJSON bounding boxes to image pixel bounding boxes.
     """
-    with open(geojson_path, 'r') as f:
-        data = json.load(f)
-
-    pixel_bboxes = []
-    for feature in data['features']:
-        coords = feature['geometry']['coordinates'][0]
-        pixel_coords = [geo_to_pixel(lon, lat, geo_transform) for lon, lat in coords]
-        x_coords = [p[0] for p in pixel_coords]
-        y_coords = [p[1] for p in pixel_coords]
-        x_min, x_max = min(x_coords), max(x_coords)
-        y_min, y_max = min(y_coords), max(y_coords)
-        pixel_bboxes.append((x_min, y_min, x_max, y_max))
-    return pixel_bboxes
-
-def clamp_bbox(bbox, image_width, image_height):
-    """
-    Clamp bounding box to ensure it stays within image bounds.
-    """
-    x_min, y_min, x_max, y_max = bbox
-    x_min = max(0, min(image_width, x_min))
-    x_max = max(0, min(image_width, x_max))
-    y_min = max(0, min(image_height, y_min))
-    y_max = max(0, min(image_height, y_max))
+    pixel_coords = [geo_to_pixel(lon, lat, geo_transform, image_width, image_height) for lon, lat in coords]
+    x_coords = [p[0] for p in pixel_coords]
+    y_coords = [p[1] for p in pixel_coords]
+    x_min, x_max = min(x_coords), max(x_coords)
+    y_min, y_max = min(y_coords), max(y_coords)
+    
+    # print(f"Pixel Bounding Box: x_min={x_min}, x_max={x_max}, y_min={y_min}, y_max={y_max}")
     return x_min, y_min, x_max, y_max
+
 
 # --------------------------
 #  Dataset Preprocessing
@@ -79,80 +123,46 @@ def preprocess_data(image_folder, feature_folder, aux_folder, output_image_file,
 
     image_files = sorted([f for f in os.listdir(image_folder) if f.endswith('.png')])
     label_files = sorted([f for f in os.listdir(feature_folder) if f.endswith('.geojson')])
+    aux_files = sorted([f for f in os.listdir(aux_folder) if f.endswith('.aux.xml')])
 
     processed_images = []
     processed_features = []
 
-    for img_file, label_file in tqdm(zip(image_files, label_files), total=len(image_files)):
+    for img_file, label_file, aux_file in tqdm(zip(image_files, label_files, aux_files), total=len(image_files)):
         img_path = os.path.join(image_folder, img_file)
         label_path = os.path.join(feature_folder, label_file)
-        aux_path = os.path.join(aux_folder, img_file + '.aux.xml')
+        aux_path = os.path.join(aux_folder, aux_file)
 
         # Parse GeoTransform from .aux.xml
         geo_transform = parse_geo_transform(aux_path)
+        
+        # Parse GeoJSON and extract bounding box
+        coords, features = read_geojson(label_path)
 
         # Load image
         image = Image.open(img_path).convert('RGB')
         width, height = image.size
 
-        # Extract bounding box and additional properties
-        with open(label_path, 'r') as f:
-            data = json.load(f)
+        # Convert coords to pixel coords
+        pixel_bbox = geojson_to_pixel_bboxes(coords, geo_transform, width, height)
 
-        if not data['features']:
-            bbox = [0.0, 0.0, 0.0, 0.0]
-            features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
-        else:
-            first_feature = data['features'][0]
-            coords = first_feature['geometry']['coordinates'][0]
-
-            xs = [pt[0] for pt in coords]
-            ys = [pt[1] for pt in coords]
-
-            if not xs or not ys:
-                bbox = [0.0, 0.0, 0.0, 0.0]
-                features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
-            else:
-                x_min, x_max = min(xs), max(xs)
-                y_min, y_max = min(ys), max(ys)
-                print(f"GeoJSON Bounding Box: x_min={x_min}, x_max={x_max}, y_min={y_min}, y_max={y_max}")
-                print(f"Image Dimensions: width={width}, height={height}")
-                bbox = [
-                    max(0, min((x_min + x_max) / (2 * width), 1)),  # cx normalized and clamped
-                    max(0, min((y_min + y_max) / (2 * height), 1)), # cy normalized and clamped
-                    max(0, min((x_max - x_min) / width, 1)),       # w normalized and clamped
-                    max(0, min((y_max - y_min) / height, 1)),      # h normalized and clamped
-                ]
-                print(f"Normalized Bounding Box: {bbox}")
-
-
-
-                # Extract additional properties
-                props = first_feature.get('properties', {})
-                length = props.get('length', 0.0)
-                wingspan = props.get('wingspan', 0.0)
-                area = props.get('area', 0.0)
-
-                # Handle categorical features
-                wing_type_str = props.get('wing_type', 'other')
-                wing_position_str = props.get('wing_position', 'other')
-
-                wing_type_code = 0 if wing_type_str == 'straight' else (1 if wing_type_str == 'swept' else 2)
-                wing_position_code = 0 if wing_position_str == 'high mounted' else (1 if 'low' in wing_position_str or 'mid' in wing_position_str else 2)
-
-                canard = 1 if props.get('canards', 'no') == 'yes' else 0
-                num_engines = props.get('num_engines', 0)
-                num_tailfins = props.get('num_tail_fins', 0)
-                faa_class = props.get('faa_wingspan_class', 0)
-
-                features = [length, wingspan, area, wing_type_code, wing_position_code, canard, num_engines, num_tailfins, faa_class]
-
+        # Convert corner format to center format and normalize
+        x_min, y_min, x_max, y_max = pixel_bbox
+        x_min, x_max = x_min / width, x_max / width
+        y_min, y_max = y_min / height, y_max / height
+        cx = (x_min + x_max) / 2
+        cy = (y_min + y_max) / 2
+        w = (x_max - x_min)
+        h = (y_max - y_min)
+        centered_bbox = [cx, cy, w, h]
+        # print(f"Center Format: cx={cx}, cy={cy}, w={w}, h={h}")
+        
         # Apply transformation to the image
         processed_image = transform(image)
 
         # Add processed image and combined features to the lists
         processed_images.append(processed_image)
-        processed_features.append(torch.tensor(bbox + features, dtype=torch.float32))
+        processed_features.append(torch.tensor(centered_bbox + features, dtype=torch.float32))
 
     # Stack processed images into a tensor
     torch.save(torch.stack(processed_images), output_image_file)
@@ -172,8 +182,9 @@ def visualize_first_data(image_file, feature_file):
     features = torch.load(feature_file, weights_only=True)
 
     # Get the first image and features
-    first_image = images[0]  # Tensor: [3, 256, 256]
-    first_features = features[0]  # Tensor: [cx, cy, w, h, ...other features]
+    n = randint(0, len(images) - 1)
+    first_image = images[n]  # Tensor: [3, 256, 256]
+    first_features = features[n]  # Tensor: [cx, cy, w, h, ...other features]
 
     # Convert tensor image back to PIL image for visualization
     mean = torch.tensor([0.5, 0.5, 0.5])
@@ -214,13 +225,12 @@ def visualize_first_data(image_file, feature_file):
 # --------------------------
 if __name__ == "__main__":
     # Input and output paths
-    train_image_folder = "./data/raw/train/PS-RGB_tiled"
-    train_aux_folder = "./data/raw/train/PS-RGB_tiled"
-    train_feature_folder = "./data/raw/train/geojson_aircraft_tiled"
-    test_image_folder = "./data/raw/test/PS-RGB_tiled"
-    test_aux_folder = "./data/raw/test/PS-RGB_tiled"
-    test_feature_folder = "./data/raw/test/geojson_aircraft_tiled"
-
+    train_image_folder = r"./data/raw/train/PS-RGB_tiled"
+    train_aux_folder = r"./data/raw/train/PS-RGB_tiled"
+    train_feature_folder = r"./data/raw/train/geojson_aircraft_tiled"
+    test_image_folder = r"./data/raw/test/PS-RGB_tiled"
+    test_aux_folder = r"./data/raw/test/PS-RGB_tiled"
+    test_feature_folder = r"./data/raw/test/geojson_aircraft_tiled"
     train_output_image_file = "./data/processed/train/images.pt"
     train_output_feature_file = "./data/processed/train/features.pt"
     test_output_image_file = "./data/processed/test/images.pt"
@@ -228,13 +238,13 @@ if __name__ == "__main__":
 
     # Define transformations
     transform = transforms.Compose([
-        transforms.Resize((256, 256)),
+        transforms.Resize((512, 512)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
     
-    # Preprocess training and test data
-    print("Preprocessing training data...")
+    # Process training and test data
+    print("Processing training data...")
     preprocess_data(
         train_image_folder,
         train_feature_folder,
@@ -243,7 +253,7 @@ if __name__ == "__main__":
         train_output_feature_file,
         transform
     )
-    print("Preprocessing test data...")
+    print("Processing test data...")
     preprocess_data(
         test_image_folder,
         test_feature_folder,
@@ -254,4 +264,4 @@ if __name__ == "__main__":
     )
     
     visualize_first_data(train_output_image_file, train_output_feature_file)
-    print("Preprocessing complete.")
+    print("Processing complete.")

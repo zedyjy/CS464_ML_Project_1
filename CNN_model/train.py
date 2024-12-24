@@ -86,8 +86,8 @@ class CNN(nn.Module):
         self.relu3 = nn.ReLU()
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # After the third pool, if input is 256x256 => output size is 32x32 with 64 channels => 32 * 32 * 64
-        self.flat_dim = 32 * 32 * 64
+        # After the third pool, if input is 512x512 => output size is 64x64 with 64 channels => 64 * 64 * 64
+        self.flat_dim = 64 * 64 * 64
 
         # A small MLP for the extra features
         # You can make this bigger or smaller as you wish
@@ -336,7 +336,7 @@ def plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_
 # ---------------------------------------------------------------------
 #  Main Function
 # ---------------------------------------------------------------------
-def main(lr=0.001, batch_size=8, num_epochs=1, early_stop_threshold=0.001, prompt_for_early_stop=True, device='cpu'):
+def main(lr=0.001, batch_size=16, num_epochs=1, device='cpu'):
     # File paths
     train_folder = './data/processed/train/'
     val_folder = './data/processed/test/'
@@ -398,12 +398,12 @@ def main(lr=0.001, batch_size=8, num_epochs=1, early_stop_threshold=0.001, promp
     analyze_feature_importance(model, feature_names, output_folder)
 
     # Save model
-    # avg_iou = evaluate_iou(model, val_loader, device=device)
-    # print(f"Average Validation IoU: {avg_iou:.4f}")
+    avg_iou = evaluate_iou(model, val_loader, device=device)
+    print(f"Average Validation IoU: {avg_iou:.4f}")
 
     # Plot training progress
     plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_val_ious, output_folder)
     print("Training completed!")
 
 if __name__ == "__main__":
-    main(lr=0.00001, batch_size=8, num_epochs=1, early_stop_threshold=0.001, prompt_for_early_stop=True, device='cpu')
+    main(lr=0.001, batch_size=16, num_epochs=3, device='cpu')
