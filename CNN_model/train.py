@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader
 from torchvision import transforms
 from torchvision.ops import box_iou
 from PIL import Image, ImageDraw
@@ -64,163 +64,6 @@ def clamp_bbox_centerwh(bboxes):
     bboxes_clamped[:, 3] = torch.clamp(bboxes[:, 3], 0.0, 1.0)
     return bboxes_clamped
 
-def check_early_stopping(loss, threshold, prompt_user=False):
-    """
-    Checks if the current loss meets the early stopping threshold.
-    Optionally prompts the user for confirmation.
-    """
-    if loss <= threshold:
-        print(f"Loss has reached the threshold ({threshold}).")
-        if prompt_user:
-            response = input("Do you want to stop training early? (y/n): ")
-            if response.lower() == 'y':
-                return True
-        else:
-            return True
-    return False
-
-# ---------------------------------------------------------------------
-#  Dataset
-# ---------------------------------------------------------------------
-class Dataset(Dataset):
-    def __init__(self, image_folder, feature_folder, transform=None, debug_mode=False):
-        """
-        Dataset initialization class for image-features pairs.
-        Args:
-            image_folder (str): Path to the folder containing images.
-            feature_folder (str): Path to the folder containing labels.
-            transform (callable, optional): Transform to be applied to images.
-            debug_mode (bool): If True, restricts dataset length for debugging.
-        """
-        self.image_folder = image_folder
-        self.feature_folder = feature_folder
-        self.transform = transform
-        self.debug_mode = debug_mode
-
-        self.image_files = sorted([f for f in os.listdir(self.image_folder) if f.endswith('.png')])
-        self.label_files = sorted([f for f in os.listdir(self.feature_folder) if f.endswith('.geojson')])
-
-    def __len__(self):
-        """
-        Returns the effective length of the dataset.
-        """
-        return self.__debug_len() if self.debug_mode else len(self.image_files)
-
-    def __debug_len(self):
-        """
-        Returns a restricted length of the dataset for debugging purposes.
-        Uses a maximum of 1000 samples or the full dataset, whichever is smaller.
-        """
-        return min(1000, len(self.image_files))
-
-    def __load_properties__(self, feature_path):
-        """
-        Reads the given GeoJSON file (feature_path), returns:
-        - bounding box: (x_min, y_min, x_max, y_max)
-        - additional aircraft properties: length, wingspan, area, wing_type_code, wing_position_code, etc.
-        """
-        with open(feature_path, 'r') as f:
-            data = json.load(f)
-
-        if not data['features']:
-            # Return dummy values if no features are found
-            return ([0.0, 0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0, 0, 0, 0)
-
-        first_feature = data['features'][0]
-        coords = first_feature['geometry']['coordinates'][0]
-
-        xs = [pt[0] for pt in coords]
-        ys = [pt[1] for pt in coords]
-
-        if not xs or not ys:
-            # Return dummy bounding box if no valid coordinates
-            return ([0.0, 0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0, 0, 0, 0)
-
-        x_min, x_max = min(xs), max(xs)
-        y_min, y_max = min(ys), max(ys)
-
-        # Extract properties
-        props = first_feature.get('properties', {})
-        length = props.get('length', 0.0)
-        wingspan = props.get('wingspan', 0.0)
-        area = props.get('area', 0.0)
-
-        # Handle categorical features
-        wing_type_str = props.get('wing_type', 'other')  # e.g., "straight"
-        wing_position_str = props.get('wing_position', 'other')  # e.g., "high mounted"
-
-        # Assign codes for wing type
-        if wing_type_str == 'straight':
-            wing_type_code = 0
-        elif wing_type_str == 'swept':
-            wing_type_code = 1
-        else:
-            wing_type_code = 2  # Default for unknown or other types
-
-        # Assign codes for wing position
-        if wing_position_str == 'high mounted':
-            wing_position_code = 0
-        elif 'low' in wing_position_str or 'mid' in wing_position_str:
-            wing_position_code = 1
-        else:
-            wing_position_code = 2  # Default for unknown or other positions
-
-        # Additional properties
-        canard = 1 if props.get('canards', 'no') == 'yes' else 0  # Binary: 1 if "yes", else 0
-        num_engines = props.get('num_engines', 0)
-        num_tailfins = props.get('num_tail_fins', 0)
-        faa_class = props.get('faa_wingspan_class', 0)
-
-        return ([x_min, y_min, x_max, y_max], length, wingspan, area, wing_type_code, wing_position_code,
-                canard, num_engines, num_tailfins, faa_class)
-
-        
-    def __getitem__(self, idx):
-        """
-        Fetches the image-feature pair at the specified index.
-        Args:
-            idx (int): Index of the sample to fetch.
-        Returns:
-            tuple: (image, features)
-        """
-        img_path = os.path.join(self.image_folder, self.image_files[idx])
-        feature_path = os.path.join(self.feature_folder, self.label_files[idx])
-
-        # Load image
-        image = Image.open(img_path).convert('RGB')
-        width, height = image.size
-
-        # Load bounding box and properties
-        ((x_min, y_min, x_max, y_max), length, wingspan, area,wing_type_code, wing_position_code,
-         canard, num_engines, num_tailfins, faa_class) = self.__load_properties__(feature_path)
-        
-        print(f"Original bbox: {x_min}, {y_min}, {x_max}, {y_max}")
-        # Convert corners -> center
-        cx = (x_min + x_max) / 2
-        cy = (y_min + y_max) / 2
-        w = x_max - x_min
-        h = y_max - y_min
-
-        # Normalize bounding box
-        cx /= width
-        cy /= height
-        w /= width
-        h /= height
-
-        # Create extra features tensor
-        extra_feats = torch.tensor([length, wingspan, area, wing_type_code,
-                                    wing_position_code, canard, num_engines,
-                                    num_tailfins, faa_class], dtype=torch.float32)
-
-        if self.transform:
-            image = self.transform(image)
-
-        bbox_centerwh = torch.tensor([cx, cy, w, h], dtype=torch.float32)
-        bbox_centerwh = clamp_bbox_centerwh(bbox_centerwh.unsqueeze(0)).squeeze(0)
-        print(f"Normalized bbox: {bbox_centerwh}")
-        return image, extra_feats, bbox_centerwh
-    
-
 # ---------------------------------------------------------------------
 #  CNN Model
 # ---------------------------------------------------------------------
@@ -243,8 +86,8 @@ class CNN(nn.Module):
         self.relu3 = nn.ReLU()
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # After the third pool, if input is 512x512 => output size is 64x64 with 64 channels => 64 * 64 * 64
-        self.flat_dim = 64 * 64 * 64
+        # After the third pool, if input is 256x256 => output size is 32x32 with 64 channels => 32 * 32 * 64
+        self.flat_dim = 32 * 32 * 64
 
         # A small MLP for the extra features
         # You can make this bigger or smaller as you wish
@@ -495,25 +338,27 @@ def plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_
 # ---------------------------------------------------------------------
 def main(lr=0.001, batch_size=8, num_epochs=1, early_stop_threshold=0.001, prompt_for_early_stop=True, device='cpu'):
     # File paths
-    train_image_folder = './data/raw/train/PS-RGB_tiled'
-    train_label_folder = './data/raw/train/geojson_aircraft_tiled'
-    val_image_folder = './data/raw/test/PS-RGB_tiled'
-    val_label_folder = './data/raw/test/geojson_aircraft_tiled'
+    train_folder = './data/processed/train/'
+    val_folder = './data/processed/test/'
     output_folder = './results/CNN'
 
     os.makedirs(output_folder, exist_ok=True)
 
-    # Data transforms
-    transform = transforms.Compose([
-        transforms.Resize((512, 512)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
-
-    # Dataset and DataLoader
-    train_dataset = Dataset(train_image_folder, train_label_folder, transform, debug_mode=True)
-    val_dataset = Dataset(val_image_folder, val_label_folder, transform, debug_mode=True)
-
+    # Load processed datasets
+    train_images = torch.load(os.path.join(train_folder, 'images.pt'), weights_only=True)
+    train_features = torch.load(os.path.join(train_folder, 'features.pt'),weights_only=True)
+    val_images = torch.load(os.path.join(val_folder, 'images.pt'))
+    val_features = torch.load(os.path.join(val_folder, 'features.pt'))
+    
+    # Separate bounding boxes and additional features
+    train_bboxes = train_features[:, :4]  # First 4 values are the bounding box
+    train_extras = train_features[:, 4:]  # Remaining values are additional features
+    val_bboxes = val_features[:, :4]
+    val_extras = val_features[:, 4:]
+    
+    # Prepare Datasets and DataLoaders
+    train_dataset = TensorDataset(train_images, train_extras, train_bboxes)
+    val_dataset = TensorDataset(val_images, val_extras, val_bboxes)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
@@ -542,11 +387,6 @@ def main(lr=0.001, batch_size=8, num_epochs=1, early_stop_threshold=0.001, promp
         # Update scheduler
         scheduler.step(val_losses[-1])  # Update learning rate based on the latest validation loss
 
-        # Early stopping
-        if check_early_stopping(val_losses[-1], early_stop_threshold, prompt_user=prompt_for_early_stop):
-            print("Early stopping triggered.")
-            break
-
     # Generate predictions
     generate_predictions(model, val_dataset, device=device, output_folder=output_folder)
 
@@ -558,8 +398,8 @@ def main(lr=0.001, batch_size=8, num_epochs=1, early_stop_threshold=0.001, promp
     analyze_feature_importance(model, feature_names, output_folder)
 
     # Save model
-    avg_iou = evaluate_iou(model, val_loader, device=device)
-    print(f"Average Validation IoU: {avg_iou:.4f}")
+    # avg_iou = evaluate_iou(model, val_loader, device=device)
+    # print(f"Average Validation IoU: {avg_iou:.4f}")
 
     # Plot training progress
     plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_val_ious, output_folder)
