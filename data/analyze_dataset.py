@@ -1,169 +1,154 @@
 import os
 import json
-import yaml
-import cv2
-from tqdm import tqdm
+import xml.etree.ElementTree as ET
+import torch
 from PIL import Image
-from shapely.geometry import box
-import shutil
-from shapely.geometry import shape
+from torchvision import transforms
+from tqdm import tqdm
 
-train_image_dir = r"./raw/train/PS-RGB_tiled"
-train_geojson_dir = r"./raw/train/geojson_aircraft_tiled"
-test_image_dir = r"./raw/test/PS-RGB_tiled"
-test_geojson_dir = r"./raw/test/geojson_aircraft_tiled"
+# --------------------------
+#  Utility Functions
+# --------------------------
+def parse_geo_transform(aux_path):
+    """
+    Parse the GeoTransform metadata from the .aux.xml file.
+    """
+    tree = ET.parse(aux_path)
+    root = tree.getroot()
+    geo_transform = root.find("GeoTransform").text.strip().split(",")
+    geo_transform = [float(value) for value in geo_transform]
+    return geo_transform
 
-output_dir = './processed'
-yolo_train_labels = os.path.join(output_dir, 'train/labels')
-yolo_test_labels = os.path.join(output_dir, 'test/labels')
-yolo_train_images = os.path.join(output_dir, 'train/images')
-yolo_test_images = os.path.join(output_dir, 'test/images')
+def geo_to_pixel(lon, lat, geo_transform):
+    """
+    Convert geographic coordinates (longitude, latitude) to image pixel coordinates.
+    """
+    x_origin, pixel_width, _, y_origin, _, pixel_height = geo_transform
+    x_pixel = int((lon - x_origin) / pixel_width)
+    y_pixel = int((y_origin - lat) / abs(pixel_height))
+    return x_pixel, y_pixel
 
-os.makedirs(output_dir, exist_ok=True)
-os.makedirs(yolo_train_labels, exist_ok=True)
-os.makedirs(yolo_train_images, exist_ok=True)
-os.makedirs(yolo_test_labels, exist_ok=True)
-os.makedirs(yolo_test_images, exist_ok=True)
+def geojson_to_pixel_bboxes(geojson_path, geo_transform):
+    """
+    Convert GeoJSON bounding boxes to image pixel bounding boxes.
+    """
+    with open(geojson_path, 'r') as f:
+        data = json.load(f)
 
-# Step 1: Analyze Dataset
-def analyze_dataset():
-    print("Analyzing Dataset...")
-    print("Training Images:", len(os.listdir(train_image_dir)))
-    print("Training GeoJSON Files:", len(os.listdir(train_geojson_dir)))
-    print("Testing Images:", len(os.listdir(test_image_dir)))
-    print("Testing GeoJSON Files:", len(os.listdir(test_geojson_dir)))
+    pixel_bboxes = []
+    for feature in data['features']:
+        coords = feature['geometry']['coordinates'][0]
+        pixel_coords = [geo_to_pixel(lon, lat, geo_transform) for lon, lat in coords]
+        x_coords = [p[0] for p in pixel_coords]
+        y_coords = [p[1] for p in pixel_coords]
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
+        pixel_bboxes.append((x_min, y_min, x_max, y_max))
+    return pixel_bboxes
 
-    sample_image_path = os.path.join(train_image_dir, os.listdir(train_image_dir)[0])
-    image = cv2.imread(sample_image_path)
-    if image is not None:
-        print("Sample image shape:", image.shape)
-    else:
-        print("Error: Could not read sample image")
+def clamp_bbox(bbox, image_width, image_height):
+    """
+    Clamp bounding box to ensure it stays within image bounds.
+    """
+    x_min, y_min, x_max, y_max = bbox
+    x_min = max(0, min(image_width, x_min))
+    x_max = max(0, min(image_width, x_max))
+    y_min = max(0, min(image_height, y_min))
+    y_max = max(0, min(image_height, y_max))
+    return x_min, y_min, x_max, y_max
 
-# Step 2: Check if the file is a valid image
-def is_image_file(filename):
-    valid_extensions = ('.jpg', '.jpeg', '.png', '.tif', '.tiff')
-    return filename.lower().endswith(valid_extensions)
+# --------------------------
+#  Dataset Preprocessing
+# --------------------------
+def preprocess_data(image_folder, feature_folder, aux_folder, output_image_folder, output_feature_folder, transform):
+    """
+    Preprocess data: converts GeoJSON coordinates to pixel coordinates,
+    normalizes bounding boxes, and saves processed images and features.
+    """
+    os.makedirs(output_image_folder, exist_ok=True)
+    os.makedirs(output_feature_folder, exist_ok=True)
 
-# Step 3: Check for corrupted images using PIL
-def check_image_validity(image_path):
-    try:
-        with Image.open(image_path) as img:
-            img.verify()
-        return True
-    except Exception:
-        return False
+    image_files = sorted([f for f in os.listdir(image_folder) if f.endswith('.png')])
+    label_files = sorted([f for f in os.listdir(feature_folder) if f.endswith('.geojson')])
 
-# Step 4: Preprocess Images
-def preprocess_images(image_dir, output_dir, size=(256, 256)):
-    os.makedirs(output_dir, exist_ok=True)
-    for img_file in tqdm(os.listdir(image_dir)):
-        if not is_image_file(img_file):
-            # print(f"Skipping non-image file: {img_file}")
-            continue
+    for img_file, label_file in tqdm(zip(image_files, label_files), total=len(image_files)):
+        img_path = os.path.join(image_folder, img_file)
+        label_path = os.path.join(feature_folder, label_file)
+        aux_path = os.path.join(aux_folder, img_file + '.aux.xml')
 
-        img_path = os.path.join(image_dir, img_file)
-        if not check_image_validity(img_path):
-            print(f"Corrupted image found: {img_path}")
-            continue
+        # Parse GeoTransform from .aux.xml
+        geo_transform = parse_geo_transform(aux_path)
 
-        image = cv2.imread(img_path)
-        if image is None:
-            print(f"Error: Unable to load image at path: {img_path}")
-            continue
+        # Load image
+        image = Image.open(img_path).convert('RGB')
+        width, height = image.size
 
-        resized_image = cv2.resize(image, size)
-        output_path = os.path.join(output_dir, img_file)
-        cv2.imwrite(output_path, resized_image)
+        # Convert GeoJSON to pixel bounding boxes
+        pixel_bboxes = geojson_to_pixel_bboxes(label_path, geo_transform)
 
-def convert_geojson_to_yolo(geojson_dir, image_dir, output_label_dir):
-    """Convert GeoJSON annotations to YOLO format."""
-    os.makedirs(output_label_dir, exist_ok=True)
-    
-    for geojson_file in tqdm(os.listdir(geojson_dir)):
-        if not geojson_file.endswith('.geojson'):
-            continue
+        # Clamp bounding boxes
+        clamped_bboxes = [clamp_bbox(bbox, width, height) for bbox in pixel_bboxes]
 
-        geojson_path = os.path.join(geojson_dir, geojson_file)
-        image_name = geojson_file.replace('.geojson', '.png')
-        image_path = os.path.join(image_dir, image_name)
-        
-        if not os.path.exists(image_path):
-            print(f"Image not found for {image_name}, skipping...")
-            continue
-        
-        # Load image to get dimensions
-        image = cv2.imread(image_path)
-        if image is None:
-            print(f"Error loading image {image_name}, skipping...")
-            continue
-        img_height, img_width, _ = image.shape
+        # Normalize bounding boxes
+        normalized_bboxes = [
+            [
+                (x_min + x_max) / (2 * width),  # cx
+                (y_min + y_max) / (2 * height),  # cy
+                (x_max - x_min) / width,  # w
+                (y_max - y_min) / height,  # h
+            ]
+            for x_min, y_min, x_max, y_max in clamped_bboxes
+        ]
 
-        # Read GeoJSON file
-        try:
-            with open(geojson_path, 'r') as f:
-                geojson_data = json.load(f)
-        except Exception as e:
-            print(f"Error reading GeoJSON {geojson_file}: {e}")
-            continue
+        # Save processed image
+        processed_image = transform(image)
+        torch.save(processed_image, os.path.join(output_image_folder, img_file.replace('.png', '.pt')))
 
-        # Create corresponding YOLO label file
-        label_path = os.path.join(output_label_dir, f"{os.path.splitext(image_name)[0]}.txt")
-        
-        with open(label_path, 'w') as label_file:
-            for feature in geojson_data.get('features', []):
-                geometry = feature.get('geometry')
-                if geometry is None or geometry['type'] != 'Polygon':
-                    continue
+        # Save processed features
+        torch.save(torch.tensor(normalized_bboxes), os.path.join(output_feature_folder, label_file.replace('.geojson', '.pt')))
 
-                # Extract bounding box
-                xs = [coord[0] for coord in geometry['coordinates'][0]]
-                ys = [coord[1] for coord in geometry['coordinates'][0]]
-                x_min, y_min, x_max, y_max = min(xs), min(ys), max(xs), max(ys)
-
-                # Convert to YOLO format
-                # Normalize the values to [0, 1]
-                center_x = ((x_min + x_max) / 2) / img_width
-                center_y = ((y_min + y_max) / 2) / img_height
-                width = (x_max - x_min) / img_width
-                height = (y_max - y_min) / img_height
-
-                # Ensure that no values are negative or greater than 1
-                center_x = max(0, min(1, center_x))
-                center_y = max(0, min(1, center_y))
-                width = max(0, min(1, width))
-                height = max(0, min(1, height))
-
-                # Write annotation to file
-                label_file.write(f"0 {center_x} {center_y} {width} {height}\n")
-
-        #print(f"YOLO labels saved to {label_path}")
-
-
-# Step 6: Move auxiliary files
-def move_aux_files(src_dir, dest_dir):
-    os.makedirs(dest_dir, exist_ok=True)
-    for file in os.listdir(src_dir):
-        if file.endswith('.aux.xml'):
-            shutil.move(os.path.join(src_dir, file), os.path.join(dest_dir, file))
-            print(f"Moved: {file}")
-
-# Step 7: Run the analysis, preprocessing, and annotation conversion
+# --------------------------
+#  Main Function
+# --------------------------
 if __name__ == "__main__":
-    analyze_dataset()
-    
-    # # Preprocess images
-    print("Preprocessing train images...")
-    preprocess_images(train_image_dir, yolo_train_images)
-    print("Preprocessing test images...")
-    preprocess_images(test_image_dir, yolo_test_images)
+    # Input and output paths
+    train_image_folder = "./data/raw/train/PS-RGB_tiled"
+    train_aux_folder = "./data/raw/train/PS-RGB_tiled"
+    train_feature_folder = "./data/raw/train/geojson_aircraft_tiled"
+    test_image_folder = "./data/raw/test/PS-RGB_tiled"
+    test_aux_folder = "./data/raw/test/PS-RGB_tiled"
+    test_feature_folder = "./data/raw/test/geojson_aircraft_tiled"
 
-    # Convert GeoJSON to YOLO format
-    print("Preprocessing train GeoJSON files...")
-    convert_geojson_to_yolo(train_geojson_dir, train_image_dir, yolo_train_labels)
-    print("Preprocessing test GeoJSON files...")
-    convert_geojson_to_yolo(test_geojson_dir, test_image_dir, yolo_test_labels)
+    train_output_image_folder = "./data/processed/train/images"
+    train_output_feature_folder = "./data/processed/train/features"
+    test_output_image_folder = "./data/processed/test/images"
+    test_output_feature_folder = "./data/processed/test/features"
 
-    # Move .aux.xml files to a separate folder
-    move_aux_files(train_geojson_dir, './processed/aux_files/train/')
-    move_aux_files(test_geojson_dir, './processed/aux_files/test/')
+    # Define transformations
+    transform = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    ])
+
+    # Preprocess training and test data
+    print("Preprocessing training data...")
+    preprocess_data(
+        train_image_folder,
+        train_feature_folder,
+        train_aux_folder,
+        train_output_image_folder,
+        train_output_feature_folder,
+        transform
+    )
+
+    print("Preprocessing test data...")
+    preprocess_data(
+        test_image_folder,
+        test_feature_folder,
+        test_aux_folder,
+        test_output_image_folder,
+        test_output_feature_folder,
+        transform
+    )
+    print("Preprocessing complete.")

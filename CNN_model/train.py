@@ -1,206 +1,569 @@
 import os
 import json
+import random
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from torchvision.ops import box_iou
 from PIL import Image, ImageDraw
 from tqdm import tqdm
 
-# CNN Model Definition
-class CNN(nn.Module):
-    def __init__(self):
-        super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
-        self.relu1 = nn.ReLU()
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
-        self.relu2 = nn.ReLU()
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.relu3 = nn.ReLU()
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 64 * 64, 4)
+# ---------------------------------------------------------------------
+#  Utility Functions
+# ---------------------------------------------------------------------
+def corner_to_center(bboxes):
+    """
+    Convert bounding boxes from corner format (x_min, y_min, x_max, y_max)
+    to center-size format (cx, cy, w, h).
+    bboxes: tensor [N, 4] or list of shape [N, 4].
+    """
+    if isinstance(bboxes, list):
+        bboxes = torch.tensor(bboxes, dtype=torch.float32)
+    
+    x_min, y_min, x_max, y_max = bboxes.split(1, dim=1)
+    cx = (x_min + x_max) / 2.0
+    cy = (y_min + y_max) / 2.0
+    w = (x_max - x_min)
+    h = (y_max - y_min)
+    return torch.cat([cx, cy, w, h], dim=1)
 
-    def forward(self, x):
-        x = self.pool1(self.relu1(self.conv1(x)))
-        x = self.pool2(self.relu2(self.conv2(x)))
-        x = self.pool3(self.relu3(self.conv3(x)))
-        x = x.view(-1, 64 * 64 * 64)
-        x = self.fc(x)
-        x = torch.sigmoid(x)
-        return x
+def center_to_corner(bboxes):
+    """
+    Convert bounding boxes from center-size format (cx, cy, w, h)
+    to corner format (x_min, y_min, x_max, y_max).
+    bboxes: tensor [N, 4] or list of shape [N, 4].
+    """
+    if isinstance(bboxes, list):
+        bboxes = torch.tensor(bboxes, dtype=torch.float32)
+    
+    cx, cy, w, h = bboxes.split(1, dim=1)
+    x_min = cx - w / 2.0
+    x_max = cx + w / 2.0
+    y_min = cy - h / 2.0
+    y_max = cy + h / 2.0
+    return torch.cat([x_min, y_min, x_max, y_max], dim=1)
 
+def clamp_bbox_centerwh(bboxes):
+    """
+    Clamp bounding boxes in (cx, cy, w, h) format to [0,1].
+    Useful if training in normalized coords to avoid out-of-range predictions.
+    bboxes: shape (N, 4).
+    """
+    if isinstance(bboxes, list):
+        bboxes = torch.tensor(bboxes, dtype=torch.float32)
 
-# Custom Dataset Class
-class CustomDataset(Dataset):
-    def __init__(self, image_folder, label_folder, transform=None):
+    bboxes_clamped = torch.zeros_like(bboxes)
+    # clamp cx, cy in [0,1]
+    bboxes_clamped[:, 0] = torch.clamp(bboxes[:, 0], 0.0, 1.0)
+    bboxes_clamped[:, 1] = torch.clamp(bboxes[:, 1], 0.0, 1.0)
+    # clamp w, h in [0,1]
+    bboxes_clamped[:, 2] = torch.clamp(bboxes[:, 2], 0.0, 1.0)
+    bboxes_clamped[:, 3] = torch.clamp(bboxes[:, 3], 0.0, 1.0)
+    return bboxes_clamped
+
+def check_early_stopping(loss, threshold, prompt_user=False):
+    """
+    Checks if the current loss meets the early stopping threshold.
+    Optionally prompts the user for confirmation.
+    """
+    if loss <= threshold:
+        print(f"Loss has reached the threshold ({threshold}).")
+        if prompt_user:
+            response = input("Do you want to stop training early? (y/n): ")
+            if response.lower() == 'y':
+                return True
+        else:
+            return True
+    return False
+
+# ---------------------------------------------------------------------
+#  Dataset
+# ---------------------------------------------------------------------
+class Dataset(Dataset):
+    def __init__(self, image_folder, feature_folder, transform=None, debug_mode=False):
+        """
+        Dataset initialization class for image-features pairs.
+        Args:
+            image_folder (str): Path to the folder containing images.
+            feature_folder (str): Path to the folder containing labels.
+            transform (callable, optional): Transform to be applied to images.
+            debug_mode (bool): If True, restricts dataset length for debugging.
+        """
         self.image_folder = image_folder
-        self.label_folder = label_folder
+        self.feature_folder = feature_folder
         self.transform = transform
+        self.debug_mode = debug_mode
 
         self.image_files = sorted([f for f in os.listdir(self.image_folder) if f.endswith('.png')])
-        self.label_files = sorted([f for f in os.listdir(self.label_folder) if f.endswith('.geojson')])
-
-        print(f"Found {len(self.image_files)} images and {len(self.label_files)} labels.")
-
-        if len(self.image_files) != len(self.label_files):
-            raise ValueError("Mismatch between images and labels count!")
+        self.label_files = sorted([f for f in os.listdir(self.feature_folder) if f.endswith('.geojson')])
 
     def __len__(self):
-        return len(self.image_files)
+        """
+        Returns the effective length of the dataset.
+        """
+        return self.__debug_len() if self.debug_mode else len(self.image_files)
 
+    def __debug_len(self):
+        """
+        Returns a restricted length of the dataset for debugging purposes.
+        Uses a maximum of 1000 samples or the full dataset, whichever is smaller.
+        """
+        return min(1000, len(self.image_files))
+
+    def __load_properties__(self, feature_path):
+        """
+        Reads the given GeoJSON file (feature_path), returns:
+        - bounding box: (x_min, y_min, x_max, y_max)
+        - additional aircraft properties: length, wingspan, area, wing_type_code, wing_position_code, etc.
+        """
+        with open(feature_path, 'r') as f:
+            data = json.load(f)
+
+        if not data['features']:
+            # Return dummy values if no features are found
+            return ([0.0, 0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0, 0, 0, 0)
+
+        first_feature = data['features'][0]
+        coords = first_feature['geometry']['coordinates'][0]
+
+        xs = [pt[0] for pt in coords]
+        ys = [pt[1] for pt in coords]
+
+        if not xs or not ys:
+            # Return dummy bounding box if no valid coordinates
+            return ([0.0, 0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0, 0, 0, 0)
+
+        x_min, x_max = min(xs), max(xs)
+        y_min, y_max = min(ys), max(ys)
+
+        # Extract properties
+        props = first_feature.get('properties', {})
+        length = props.get('length', 0.0)
+        wingspan = props.get('wingspan', 0.0)
+        area = props.get('area', 0.0)
+
+        # Handle categorical features
+        wing_type_str = props.get('wing_type', 'other')  # e.g., "straight"
+        wing_position_str = props.get('wing_position', 'other')  # e.g., "high mounted"
+
+        # Assign codes for wing type
+        if wing_type_str == 'straight':
+            wing_type_code = 0
+        elif wing_type_str == 'swept':
+            wing_type_code = 1
+        else:
+            wing_type_code = 2  # Default for unknown or other types
+
+        # Assign codes for wing position
+        if wing_position_str == 'high mounted':
+            wing_position_code = 0
+        elif 'low' in wing_position_str or 'mid' in wing_position_str:
+            wing_position_code = 1
+        else:
+            wing_position_code = 2  # Default for unknown or other positions
+
+        # Additional properties
+        canard = 1 if props.get('canards', 'no') == 'yes' else 0  # Binary: 1 if "yes", else 0
+        num_engines = props.get('num_engines', 0)
+        num_tailfins = props.get('num_tail_fins', 0)
+        faa_class = props.get('faa_wingspan_class', 0)
+
+        return ([x_min, y_min, x_max, y_max], length, wingspan, area, wing_type_code, wing_position_code,
+                canard, num_engines, num_tailfins, faa_class)
+
+        
     def __getitem__(self, idx):
+        """
+        Fetches the image-feature pair at the specified index.
+        Args:
+            idx (int): Index of the sample to fetch.
+        Returns:
+            tuple: (image, features)
+        """
         img_path = os.path.join(self.image_folder, self.image_files[idx])
-        label_path = os.path.join(self.label_folder, self.label_files[idx])
+        feature_path = os.path.join(self.feature_folder, self.label_files[idx])
 
         # Load image
         image = Image.open(img_path).convert('RGB')
         width, height = image.size
 
-        # Load bounding box and normalize to [0, 1]
-        bbox = load_bounding_box(label_path)
-        x0, y0, x1, y1 = bbox
-        x0, x1 = x0 / width, x1 / width
-        y0, y1 = y0 / height, y1 / height
-        normalized_bbox = [x0, y0, x1, y1]
+        # Load bounding box and properties
+        ((x_min, y_min, x_max, y_max), length, wingspan, area,wing_type_code, wing_position_code,
+         canard, num_engines, num_tailfins, faa_class) = self.__load_properties__(feature_path)
+        
+        print(f"Original bbox: {x_min}, {y_min}, {x_max}, {y_max}")
+        # Convert corners -> center
+        cx = (x_min + x_max) / 2
+        cy = (y_min + y_max) / 2
+        w = x_max - x_min
+        h = y_max - y_min
+
+        # Normalize bounding box
+        cx /= width
+        cy /= height
+        w /= width
+        h /= height
+
+        # Create extra features tensor
+        extra_feats = torch.tensor([length, wingspan, area, wing_type_code,
+                                    wing_position_code, canard, num_engines,
+                                    num_tailfins, faa_class], dtype=torch.float32)
 
         if self.transform:
             image = self.transform(image)
 
-        return image, torch.tensor(normalized_bbox, dtype=torch.float32)
-
-
-# Utility Functions
-def load_bounding_box(label_file):
-    # Read the bounding box from the JSON file
-    for f in os.listdir(label_file):
-        if f.endswith('.geojson'):
-            bbox = json.load(f)['features'][0]['geometry']['coordinates'][0]
+        bbox_centerwh = torch.tensor([cx, cy, w, h], dtype=torch.float32)
+        bbox_centerwh = clamp_bbox_centerwh(bbox_centerwh.unsqueeze(0)).squeeze(0)
+        print(f"Normalized bbox: {bbox_centerwh}")
+        return image, extra_feats, bbox_centerwh
     
-    x_coords, y_coords = zip(*bbox)
-    return [min(x_coords), min(y_coords), max(x_coords), max(y_coords)]
 
+# ---------------------------------------------------------------------
+#  CNN Model
+# ---------------------------------------------------------------------
+class CNN(nn.Module):
+    def __init__(self, extra_in=3):
+        """
+        :param extra_in: number of extra features (e.g. length, wingspan, wing_position_code).
+        """
+        super(CNN, self).__init__()
+        # Convolutional backbone for images
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
+        self.relu1 = nn.ReLU()
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
 
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
+        self.relu2 = nn.ReLU()
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-def train_model(model, train_loader, optimizer, criterion, num_epochs=1):
-    model.train()
-    train_losses = []
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.relu3 = nn.ReLU()
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        # After the third pool, if input is 512x512 => output size is 64x64 with 64 channels => 64 * 64 * 64
+        self.flat_dim = 64 * 64 * 64
+
+        # A small MLP for the extra features
+        # You can make this bigger or smaller as you wish
+        self.extra_fc = nn.Sequential(
+            nn.Linear(extra_in, 16),
+            nn.ReLU()
+        )
+
+        # Combine image features + extra features => final bounding box
+        self.fc_final = nn.Linear(self.flat_dim + 16, 4)
+
+    def forward(self, x, extras):
+        """
+        :param x: image tensor (B, 3, 512, 512)
+        :param extras: extra feature tensor (B, extra_in)
+        :return: bounding box (B, 4) => (cx, cy, w, h)
+        """
+        # CNN for image
+        x = self.pool1(self.relu1(self.conv1(x)))
+        x = self.pool2(self.relu2(self.conv2(x)))
+        x = self.pool3(self.relu3(self.conv3(x)))
+        x = x.view(-1, self.flat_dim)
+
+        # MLP for extras
+        e = self.extra_fc(extras)
+
+        # Combine
+        combined = torch.cat([x, e], dim=1)  # shape (B, flat_dim+16)
+        out = self.fc_final(combined)        # shape (B, 4)
+        return out
+
+# ---------------------------------------------------------------------
+#  Model Training and Evaluation
+# ---------------------------------------------------------------------
+def train_model(model, train_loader, optimizer, criterion, num_epochs=1, device='cpu'):
+    model.to(device)
+    batch_train_losses = []
+    batch_train_ious = []
 
     for epoch in range(num_epochs):
-        running_loss = 0.0
-        progress_bar = tqdm(train_loader, desc=f"Training Epoch {epoch + 1}/{num_epochs}")
-        for images, targets in progress_bar:
+        model.train()
+        progress_bar = tqdm(train_loader, desc=f"Train Epoch {epoch+1}/{num_epochs}")
+        for images, extra_feats, targets in progress_bar:
+            images, extra_feats, targets = images.to(device), extra_feats.to(device), targets.to(device)
+
             optimizer.zero_grad()
-            outputs = model(images)
+            outputs = model(images, extra_feats)  # Bounding box predictions
+
+            # Compute loss
             loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
-            running_loss += loss.item()
-            progress_bar.set_postfix(loss=loss.item())
-        epoch_loss = running_loss / len(train_loader)
-        train_losses.append(epoch_loss)
-        print(f"Epoch {epoch + 1} Loss: {epoch_loss}")
 
-    return train_losses
+            # Compute IoU
+            preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
+            targets_corner = center_to_corner(targets)
+            iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
 
+            batch_train_losses.append(loss.item())
+            batch_train_ious.append(iou)
 
-def validate_model(model, val_loader, criterion):
+            # Update progress bar
+            progress_bar.set_postfix(loss=loss.item(), iou=iou)
+
+    return batch_train_losses, batch_train_ious
+
+def validate_model(model, val_loader, criterion, device='cpu'):
     model.eval()
-    val_losses = []
+    batch_val_losses = []
+    batch_val_ious = []
 
-    progress_bar = tqdm(val_loader, desc="Validating")
     with torch.no_grad():
-        for images, targets in progress_bar:
-            outputs = model(images)
+        progress_bar = tqdm(val_loader, desc="Validation")
+        for images, extra_feats, targets in progress_bar:
+            images, extra_feats, targets = images.to(device), extra_feats.to(device), targets.to(device)
+
+            outputs = model(images, extra_feats)  # Bounding box predictions
+
+            # Compute loss
             loss = criterion(outputs, targets)
-            val_losses.append(loss.item())
-            progress_bar.set_postfix(loss=loss.item())
-    avg_loss = sum(val_losses) / len(val_losses)
-    print(f"Validation Loss: {avg_loss}")
-    return avg_loss
+            batch_val_losses.append(loss.item())
 
+            # Compute IoU
+            preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
+            targets_corner = center_to_corner(targets)
+            iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
+            batch_val_ious.append(iou)
 
-def generate_images_with_bounding_boxes(model, val_loader, output_folder):
+            # Update progress bar
+            progress_bar.set_postfix(loss=loss.item(), iou=iou)
+
+    return batch_val_losses, batch_val_ious
+
+# ---------------------------------------------------------------------
+#  Resluts and Analysis
+# ---------------------------------------------------------------------
+def analyze_feature_importance(model, feature_names, output_folder='./results/CNN'):
+    """
+    Analyzes the importance of each input feature by looking at the model's learned weights.
+    Produces and saves a bar plot of feature importance.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Extract learned weights for the extra features
+    feature_weights = model.extra_fc[0].weight.abs().mean(dim=0).detach().cpu().numpy()
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.barh(feature_names, feature_weights, color='steelblue')
+    plt.xlabel("Average Weight Magnitude")
+    plt.ylabel("Feature")
+    plt.title("Feature Importance")
+    plt.grid(axis='x')
+
+    plot_path = os.path.join(output_folder, 'feature_importance.png')
+    plt.savefig(plot_path)
+    plt.show()
+    print(f"Feature importance plot saved to {plot_path}")
+    
+def generate_predictions(model, val_dataset, device='cpu', output_folder='./results/CNN', num_images=16):
+    """
+    Picks 16 random images from val_dataset, predicts their bounding boxes,
+    draws them along with true bounding boxes, and saves the results in a grid format.
+    """
     os.makedirs(output_folder, exist_ok=True)
     model.eval()
 
+    # Define mean and std used for normalization
+    mean = torch.tensor([0.5, 0.5, 0.5])
+    std = torch.tensor([0.5, 0.5, 0.5])
+
+    # Prepare a grid to store results
+    grid_size = int(num_images ** 0.5)  # Assuming square grid (e.g., 4x4 for 16 images)
+    fig, axs = plt.subplots(grid_size, grid_size, figsize=(12, 12))
+
     with torch.no_grad():
-        for idx, (images, _) in enumerate(tqdm(val_loader, desc="Generating Bounding Boxes")):
-            outputs = model(images)
+        for idx in range(num_images):
+            # Select a random sample
+            random_idx = random.randint(0, len(val_dataset) - 1)
+            image, extra_feats, true_bbox = val_dataset[random_idx]
 
-            for i in range(len(outputs)):
-                image = transforms.ToPILImage()(images[i]).convert('RGB')
-                width, height = image.size
+            # Prepare inputs
+            image_input = image.unsqueeze(0).to(device)  # Add batch dimension
+            extra_feats_input = extra_feats.unsqueeze(0).to(device)
 
-                # Scale bounding box back to pixel coordinates
-                predicted_bbox = outputs[i].numpy()
-                x0 = predicted_bbox[0] * width
-                y0 = predicted_bbox[1] * height
-                x1 = predicted_bbox[2] * width
-                y1 = predicted_bbox[3] * height
+            # Get predictions
+            pred_bbox = model(image_input, extra_feats_input)[0].cpu()  # Predicted bounding box in (cx, cy, w, h)
+            pred_bbox = clamp_bbox_centerwh(pred_bbox.unsqueeze(0))[0]  # Clamp predictions to [0,1]
+            pred_corner = center_to_corner(pred_bbox.unsqueeze(0))[0]  # Convert to (x_min, y_min, x_max, y_max)
 
-                # Ensure valid coordinates
-                x0, x1 = sorted([x0, x1])
-                y0, y1 = sorted([y0, y1])
+            # Denormalize the image for visualization
+            image_denorm = image * std[:, None, None] + mean[:, None, None]
+            pil_image = transforms.ToPILImage()(image_denorm).convert('RGB')
 
-                # Draw the bounding box
-                draw = ImageDraw.Draw(image)
-                draw.rectangle([x0, y0, x1, y1], outline='red', width=2)
+            # Scale predicted bbox to pixel coordinates
+            width, height = pil_image.size
+            x_min, y_min, x_max, y_max = pred_corner
+            x_min, x_max = x_min * width, x_max * width
+            y_min, y_max = y_min * height, y_max * height
 
-                # Save the image
-                image_path = os.path.join(output_folder, f"image_{idx}_{i}.png")
-                image.save(image_path)
+            # True bbox
+            true_corner = center_to_corner(true_bbox.unsqueeze(0))[0]  # Convert to (x_min, y_min, x_max, y_max)
+            x_min_t, y_min_t, x_max_t, y_max_t = true_corner
+            x_min_t, x_max_t = x_min_t * width, x_max_t * width
+            y_min_t, y_max_t = y_min_t * height, y_max_t * height
 
+            # Draw true and predicted bounding boxes
+            draw = ImageDraw.Draw(pil_image)
+            draw.rectangle([x_min, y_min, x_max, y_max], outline='red', width=3)  # Predicted bbox
+            draw.rectangle([x_min_t, y_min_t, x_max_t, y_max_t], outline='green', width=3)  # True bbox
 
-def plot_training_process(train_losses, val_losses, num_epochs):
-    epochs = range(1, num_epochs + 1)
+            # Plot on the grid
+            ax = axs[idx // grid_size, idx % grid_size]
+            ax.imshow(pil_image)
+            ax.axis('off')
+            ax.set_title(f"Sample {random_idx}")
 
+    # Save the grid of images
+    grid_path = os.path.join(output_folder, "random_predictions_grid.png")
+    plt.tight_layout()
+    plt.savefig(grid_path)
+    plt.show()
+    print(f"Random predictions grid saved to {grid_path}")
+
+def evaluate_iou(model, val_loader, device='cpu'):
+    """
+    Compute average IoU across the validation set for single bounding-box predictions.
+    The target bounding boxes are in (cx, cy, w, h) [normalized].
+    """
+    model.eval()
+    total_iou = 0.0
+    count = 0
+
+    with torch.no_grad():
+        for (images, extra_feats, targets) in val_loader:
+            images = images.to(device)
+            extra_feats = extra_feats.to(device)
+            targets = targets.to(device)
+
+            preds = model(images, extra_feats)  # shape: (batch_size, 4)
+            preds = clamp_bbox_centerwh(preds)  # Clamp to [0, 1]
+            preds_corner = center_to_corner(preds)  # Convert to corner format
+            targets_corner = center_to_corner(targets)  # Convert targets to corner format
+
+            # Compute IoU for the batch
+            iou_values = box_iou(preds_corner, targets_corner)  # IoU matrix
+            batch_iou = iou_values.diagonal().mean().item()  # Mean IoU for the batch
+            total_iou += batch_iou * images.size(0)  # Sum IoUs weighted by batch size
+            count += images.size(0)
+
+    avg_iou = total_iou / count if count > 0 else 0.0
+    return avg_iou
+
+def plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_val_ious, output_folder='./results/CNN'):
+    """
+    Plots and saves continuous loss and IoU metrics for all batches across epochs.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+    train_batches = range(1, len(batch_train_losses) + 1)
+    val_batches = range(1, len(batch_val_losses) + 1)
+
+    # Plot Loss
     plt.figure(figsize=(10, 6))
-    plt.plot(epochs, train_losses, label="Training Loss", marker='o')
-    plt.plot(epochs, val_losses, label="Validation Loss", marker='o')
-    plt.title("Training and Validation Loss Over Epochs")
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
+    plt.plot(train_batches, batch_train_losses, label='Train Loss', marker='o', linestyle='-', markersize=2)
+    plt.plot(val_batches, batch_val_losses, label='Validation Loss', marker='x', linestyle='-', markersize=2)
+    plt.title('Continuous Loss During Training and Validation')
+    plt.xlabel('Batches (Cumulative)')
+    plt.ylabel('Loss')
     plt.legend()
     plt.grid(True)
+    plt.savefig(os.path.join(output_folder, 'continuous_loss_curve.png'))
     plt.show()
 
+    # Plot IoU
+    plt.figure(figsize=(10, 6))
+    plt.plot(train_batches, batch_train_ious, label='Train IoU', marker='o', linestyle='-', markersize=2)
+    plt.plot(val_batches, batch_val_ious, label='Validation IoU', marker='x', linestyle='-', markersize=2)
+    plt.title('Continuous IoU During Training and Validation')
+    plt.xlabel('Batches (Cumulative)')
+    plt.ylabel('IoU')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(output_folder, 'continuous_iou_curve.png'))
+    plt.show()
 
-# Main Script
-if __name__ == "__main__":
-    train_image_folder = '/Users/eylul/Documents/python/CS464_ML_Learning_Project/raw/train/PS-RGB_tiled'
-    train_label_folder = '/Users/eylul/Documents/python/CS464_ML_Learning_Project/raw/train/geojson_aircraft_tiled'
-    val_image_folder = '/Users/eylul/Documents/python/CS464_ML_Learning_Project/raw/test/PS-RGB_tiled'
-    val_label_folder = '/Users/eylul/Documents/python/CS464_ML_Learning_Project/raw/test/geojson_aircraft_tiled'
-    output_folder = '/Users/eylul/Documents/python/CS464_ML_Learning_Project/results'
+# ---------------------------------------------------------------------
+#  Main Function
+# ---------------------------------------------------------------------
+def main(lr=0.001, batch_size=8, num_epochs=1, early_stop_threshold=0.001, prompt_for_early_stop=True, device='cpu'):
+    # File paths
+    train_image_folder = './data/raw/train/PS-RGB_tiled'
+    train_label_folder = './data/raw/train/geojson_aircraft_tiled'
+    val_image_folder = './data/raw/test/PS-RGB_tiled'
+    val_label_folder = './data/raw/test/geojson_aircraft_tiled'
+    output_folder = './results/CNN'
 
-    # Data preparation
-    transform = transforms.Compose([transforms.Resize((512, 512)), transforms.ToTensor(), transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
-    train_dataset = CustomDataset(train_image_folder, train_label_folder, transform)
-    val_dataset = CustomDataset(val_image_folder, val_label_folder, transform)
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
+    os.makedirs(output_folder, exist_ok=True)
 
-    # Model, loss, optimizer
-    model = CNN()
+    # Data transforms
+    transform = transforms.Compose([
+        transforms.Resize((512, 512)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    ])
+
+    # Dataset and DataLoader
+    train_dataset = Dataset(train_image_folder, train_label_folder, transform, debug_mode=True)
+    val_dataset = Dataset(val_image_folder, val_label_folder, transform, debug_mode=True)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    # Model, optimizer, and loss
+    model = CNN(extra_in=len(train_dataset[0][1]))  # Extra features dynamically determined
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)  # Add weight decay
     criterion = nn.SmoothL1Loss()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
 
-    print(load_bounding_box(val_label_folder))
-    # Training and validation
-    print("Training started...")
-    num_epochs = 5
-    train_losses = train_model(model, train_loader, optimizer, criterion, num_epochs=num_epochs)
-    val_loss = validate_model(model, val_loader, criterion)
+    batch_train_losses, batch_train_ious = [], []
+    batch_val_losses, batch_val_ious = [], []
 
-    # Generate images with bounding boxes
-    print("Generating bounding boxes...")
-    generate_images_with_bounding_boxes(model, val_loader, output_folder)
+    for epoch in range(num_epochs):
+        print(f"Epoch {epoch + 1}/{num_epochs}")
 
-    # Plot training process
-    plot_training_process(train_losses, [val_loss] * num_epochs, num_epochs)
+        # Train
+        train_losses, train_ious = train_model(model, train_loader, optimizer, criterion, num_epochs=1, device=device)
+        batch_train_losses.extend(train_losses)
+        batch_train_ious.extend(train_ious)
 
-    print("Process complete!")
+        # Validate
+        val_losses, val_ious = validate_model(model, val_loader, criterion, device=device)
+        batch_val_losses.extend(val_losses)
+        batch_val_ious.extend(val_ious)
+
+        # Update scheduler
+        scheduler.step(val_losses[-1])  # Update learning rate based on the latest validation loss
+
+        # Early stopping
+        if check_early_stopping(val_losses[-1], early_stop_threshold, prompt_user=prompt_for_early_stop):
+            print("Early stopping triggered.")
+            break
+
+    # Generate predictions
+    generate_predictions(model, val_dataset, device=device, output_folder=output_folder)
+
+    # Analyze feature importance
+    feature_names = [
+        "length", "wingspan", "area", 
+        "wing_type_code", "wing_position_code", 
+        "canard", "num_engines", "num_tailfins", "faa_class"]
+    analyze_feature_importance(model, feature_names, output_folder)
+
+    # Save model
+    avg_iou = evaluate_iou(model, val_loader, device=device)
+    print(f"Average Validation IoU: {avg_iou:.4f}")
+
+    # Plot training progress
+    plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_val_ious, output_folder)
+    print("Training completed!")
+
+if __name__ == "__main__":
+    main(lr=0.00001, batch_size=8, num_epochs=1, early_stop_threshold=0.001, prompt_for_early_stop=True, device='cpu')
