@@ -1,5 +1,4 @@
 import os
-import json
 import random
 import matplotlib.pyplot as plt
 import torch
@@ -87,7 +86,7 @@ class CNN(nn.Module):
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         # After the third pool, if input is 512x512 => output size is 64x64 with 64 channels => 64 * 64 * 64
-        self.flat_dim = 64 * 64 * 64
+        self.flat_dim = 32 * 32 * 64
 
         # A small MLP for the extra features
         # You can make this bigger or smaller as you wish
@@ -122,42 +121,59 @@ class CNN(nn.Module):
 # ---------------------------------------------------------------------
 #  Model Training and Evaluation
 # ---------------------------------------------------------------------
-def train_model(model, train_loader, optimizer, criterion, num_epochs=1, device='cpu'):
+def train_model(model, train_loader, optimizer, criterion, device='cpu'):
+    """
+    Args:
+        model (_type_): _description_
+        train_loader (_type_): _description_
+        optimizer (_type_): _description_
+        criterion (_type_): _description_
+        device (str, optional): _description_. Defaults to 'cpu'.
+
+    Returns:
+        _type_: _description_
+    """
     model.to(device)
-    batch_train_losses = []
-    batch_train_ious = []
+    model.train()
 
-    for epoch in range(num_epochs):
-        model.train()
-        progress_bar = tqdm(train_loader, desc=f"Train Epoch {epoch+1}/{num_epochs}")
-        for images, extra_feats, targets in progress_bar:
-            images, extra_feats, targets = images.to(device), extra_feats.to(device), targets.to(device)
+    total_loss = 0.0
+    total_iou = 0.0
+    num_batches = 0
 
-            optimizer.zero_grad()
-            outputs = model(images, extra_feats)  # Bounding box predictions
+    progress_bar = tqdm(train_loader, desc="Training")
+    for images, extra_feats, targets in progress_bar:
+        images, extra_feats, targets = images.to(device), extra_feats.to(device), targets.to(device)
 
-            # Compute loss
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
+        optimizer.zero_grad()
+        outputs = model(images, extra_feats)  # Bounding box predictions
 
-            # Compute IoU
-            preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
-            targets_corner = center_to_corner(targets)
-            iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
+        # Compute loss
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
 
-            batch_train_losses.append(loss.item())
-            batch_train_ious.append(iou)
+        # Compute IoU
+        preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
+        targets_corner = center_to_corner(targets)
+        iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
 
-            # Update progress bar
-            progress_bar.set_postfix(loss=loss.item(), iou=iou)
+        total_loss += loss.item()
+        total_iou += iou
+        num_batches += 1
 
-    return batch_train_losses, batch_train_ious
+        progress_bar.set_postfix(loss=loss.item(), iou=iou)
+
+    avg_loss = total_loss / num_batches
+    avg_iou = total_iou / num_batches
+    return avg_loss, avg_iou
 
 def validate_model(model, val_loader, criterion, device='cpu'):
+    model.to(device)
     model.eval()
-    batch_val_losses = []
-    batch_val_ious = []
+
+    total_loss = 0.0
+    total_iou = 0.0
+    num_batches = 0
 
     with torch.no_grad():
         progress_bar = tqdm(val_loader, desc="Validation")
@@ -168,18 +184,21 @@ def validate_model(model, val_loader, criterion, device='cpu'):
 
             # Compute loss
             loss = criterion(outputs, targets)
-            batch_val_losses.append(loss.item())
 
             # Compute IoU
             preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
             targets_corner = center_to_corner(targets)
             iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
-            batch_val_ious.append(iou)
 
-            # Update progress bar
+            total_loss += loss.item()
+            total_iou += iou
+            num_batches += 1
+
             progress_bar.set_postfix(loss=loss.item(), iou=iou)
 
-    return batch_val_losses, batch_val_ious
+    avg_loss = total_loss / num_batches
+    avg_iou = total_iou / num_batches
+    return avg_loss, avg_iou
 
 # ---------------------------------------------------------------------
 #  Resluts and Analysis
@@ -301,36 +320,35 @@ def evaluate_iou(model, val_loader, device='cpu'):
     avg_iou = total_iou / count if count > 0 else 0.0
     return avg_iou
 
-def plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_val_ious, output_folder='./results/CNN'):
+def plot_training(train_losses, val_losses, train_ious, val_ious, output_folder='./results/CNN'):
     """
-    Plots and saves continuous loss and IoU metrics for all batches across epochs.
+    Plots and saves epoch-level loss and IoU metrics for training and validation.
     """
     os.makedirs(output_folder, exist_ok=True)
-    train_batches = range(1, len(batch_train_losses) + 1)
-    val_batches = range(1, len(batch_val_losses) + 1)
+    epochs = range(1, len(train_losses) + 1)
 
     # Plot Loss
     plt.figure(figsize=(10, 6))
-    plt.plot(train_batches, batch_train_losses, label='Train Loss', marker='o', linestyle='-', markersize=2)
-    plt.plot(val_batches, batch_val_losses, label='Validation Loss', marker='x', linestyle='-', markersize=2)
-    plt.title('Continuous Loss During Training and Validation')
-    plt.xlabel('Batches (Cumulative)')
+    plt.plot(epochs, train_losses, label='Train Loss', marker='o', linestyle='-', markersize=4)
+    plt.plot(epochs, val_losses, label='Validation Loss', marker='x', linestyle='-', markersize=4)
+    plt.title('Loss During Training and Validation')
+    plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_folder, 'continuous_loss_curve.png'))
+    plt.savefig(os.path.join(output_folder, 'epoch_loss_curve.png'))
     plt.show()
 
     # Plot IoU
     plt.figure(figsize=(10, 6))
-    plt.plot(train_batches, batch_train_ious, label='Train IoU', marker='o', linestyle='-', markersize=2)
-    plt.plot(val_batches, batch_val_ious, label='Validation IoU', marker='x', linestyle='-', markersize=2)
-    plt.title('Continuous IoU During Training and Validation')
-    plt.xlabel('Batches (Cumulative)')
+    plt.plot(epochs, train_ious, label='Train IoU', marker='o', linestyle='-', markersize=4)
+    plt.plot(epochs, val_ious, label='Validation IoU', marker='x', linestyle='-', markersize=4)
+    plt.title('IoU During Training and Validation')
+    plt.xlabel('Epoch')
     plt.ylabel('IoU')
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_folder, 'continuous_iou_curve.png'))
+    plt.savefig(os.path.join(output_folder, 'epoch_iou_curve.png'))
     plt.show()
 
 # ---------------------------------------------------------------------
@@ -347,8 +365,8 @@ def main(lr=0.001, batch_size=16, num_epochs=1, device='cpu'):
     # Load processed datasets
     train_images = torch.load(os.path.join(train_folder, 'images.pt'), weights_only=True)
     train_features = torch.load(os.path.join(train_folder, 'features.pt'),weights_only=True)
-    val_images = torch.load(os.path.join(val_folder, 'images.pt'))
-    val_features = torch.load(os.path.join(val_folder, 'features.pt'))
+    val_images = torch.load(os.path.join(val_folder, 'images.pt'), weights_only=True)
+    val_features = torch.load(os.path.join(val_folder, 'features.pt'), weights_only=True)
     
     # Separate bounding boxes and additional features
     train_bboxes = train_features[:, :4]  # First 4 values are the bounding box
@@ -366,26 +384,35 @@ def main(lr=0.001, batch_size=16, num_epochs=1, device='cpu'):
     model = CNN(extra_in=len(train_dataset[0][1]))  # Extra features dynamically determined
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)  # Add weight decay
     criterion = nn.SmoothL1Loss()
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
-    batch_train_losses, batch_train_ious = [], []
-    batch_val_losses, batch_val_ious = [], []
+    epoch_train_losses = []
+    epoch_train_ious = []
+    epoch_val_losses = []
+    epoch_val_ious = []
 
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
 
         # Train
-        train_losses, train_ious = train_model(model, train_loader, optimizer, criterion, num_epochs=1, device=device)
-        batch_train_losses.extend(train_losses)
-        batch_train_ious.extend(train_ious)
+        train_loss, train_iou = train_model(model, train_loader, optimizer, criterion, device=device)
+        epoch_train_losses.append(train_loss)
+        epoch_train_ious.append(train_iou)
 
         # Validate
-        val_losses, val_ious = validate_model(model, val_loader, criterion, device=device)
-        batch_val_losses.extend(val_losses)
-        batch_val_ious.extend(val_ious)
+        val_loss, val_iou = validate_model(model, val_loader, criterion, device=device)
+        epoch_val_losses.append(val_loss)
+        epoch_val_ious.append(val_iou)
 
         # Update scheduler
-        scheduler.step(val_losses[-1])  # Update learning rate based on the latest validation loss
+        scheduler.step(val_loss)  # Update learning rate based on the latest validation loss
+
+        # Print epoch results
+        print(f"Train Loss: {train_loss:.4f}, Train IoU: {train_iou:.4f}")
+        print(f"Val Loss: {val_loss:.4f}, Val IoU: {val_iou:.4f}")
+
+    # Plot training progress
+    plot_training(epoch_train_losses, epoch_val_losses, epoch_train_ious, epoch_val_ious, output_folder)
 
     # Generate predictions
     generate_predictions(model, val_dataset, device=device, output_folder=output_folder)
@@ -398,12 +425,15 @@ def main(lr=0.001, batch_size=16, num_epochs=1, device='cpu'):
     analyze_feature_importance(model, feature_names, output_folder)
 
     # Save model
-    avg_iou = evaluate_iou(model, val_loader, device=device)
-    print(f"Average Validation IoU: {avg_iou:.4f}")
-
-    # Plot training progress
-    plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_val_ious, output_folder)
+    model_path = os.path.join(output_folder, 'model.pth')
+    torch.save(model.state_dict(), model_path)
+    print(f"Model saved to {model_path}")
+    
+    # Evaluate final IoU
+    # avg_iou = evaluate_iou(model, val_loader, device=device)
+    # print(f"Average Validation IoU: {avg_iou:.4f}")
+    
     print("Training completed!")
 
 if __name__ == "__main__":
-    main(lr=0.001, batch_size=16, num_epochs=3, device='cpu')
+    main(lr=0.001, batch_size=4, num_epochs=50, device='cpu')
