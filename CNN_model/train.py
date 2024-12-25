@@ -1,19 +1,115 @@
 import os
 import json
 import random
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader
+import matplotlib.pyplot as plt
+import xml.etree.ElementTree as ET
 from torchvision import transforms
 from torchvision.ops import box_iou
+from torch.utils.data import Dataset, DataLoader
 from PIL import Image, ImageDraw
+from datetime import datetime
 from tqdm import tqdm
 
 # ---------------------------------------------------------------------
 #  Utility Functions
 # ---------------------------------------------------------------------
+def parse_geo_transform(aux_path):
+    """
+    Parse the GeoTransform metadata from the .aux.xml file.
+    """
+    tree = ET.parse(aux_path)
+    root = tree.getroot()
+    geo_transform = root.find("GeoTransform").text.strip().split(",")
+    geo_transform = [float(value) for value in geo_transform]
+    
+    # print(f"GeoTransform: {geo_transform}")
+    return geo_transform
+
+def read_geojson(geojson_path):
+    """
+    Read and parse GeoJSON file.
+    """
+    with open(geojson_path, 'r') as f:
+        data = json.load(f)
+        
+    if not data['features']:
+        coords = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # Dummy coordinates
+        features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
+    else:
+        first_feature = data['features'][0]
+        coords = first_feature['geometry']['coordinates']
+        
+        # Ensure `coords` is a list of tuples/lists
+        if not isinstance(coords, list) or not all(isinstance(pt, (list, tuple)) and len(pt) == 2 for pt in coords[0]):
+            raise ValueError(f"Invalid GeoJSON coordinates: {coords}")
+        
+        coords = coords[0]  # Extract the first polygon
+        
+        xs = [pt[0] for pt in coords]
+        ys = [pt[1] for pt in coords]
+        
+        if not xs or not ys:
+            coords = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # Dummy coordinates
+            features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
+        else:
+            x_min, x_max = min(xs), max(xs)
+            y_min, y_max = min(ys), max(ys)
+        
+        # Extract additional properties
+        props = first_feature.get('properties', {})
+        length = props.get('length', 0.0)
+        wingspan = props.get('wingspan', 0.0)
+        area = props.get('area', 0.0)
+
+        # Handle categorical features
+        wing_type_str = props.get('wing_type', 'other')
+        wing_position_str = props.get('wing_position', 'other')
+
+        wing_type_code = 0 if wing_type_str == 'straight' else (1 if wing_type_str == 'swept' else 2)
+        wing_position_code = 0 if wing_position_str == 'high mounted' else (1 if 'low' in wing_position_str or 'mid' in wing_position_str else 2)
+
+        canard = 1 if props.get('canards', 'no') == 'yes' else 0
+        num_engines = props.get('num_engines', 0)
+        num_tailfins = props.get('num_tail_fins', 0)
+        faa_class = props.get('faa_wingspan_class', 0)
+
+        features = [length, wingspan, area, wing_type_code, wing_position_code, canard, num_engines, num_tailfins, faa_class]
+    
+    # print(f"GeoJSON Coords: {coords}")
+    # print(f"GeoJSON Features: {features}")
+    return coords, features
+
+def geo_to_pixel(lon, lat, geo_transform, image_width, image_height):
+    """
+    Convert geographic coordinates (longitude, latitude) to image pixel coordinates.
+    """
+    x_origin, pixel_width, _, y_origin, _, pixel_height = geo_transform
+    x_pixel = int((lon - x_origin) / pixel_width)
+    y_pixel = int((y_origin - lat) / abs(pixel_height))
+
+    # Clamp to image dimensions
+    x_pixel = max(0, min(x_pixel, image_width - 1))
+    y_pixel = max(0, min(y_pixel, image_height - 1))
+    
+    # print(f"Pixel Coordinates: x={x_pixel}, y={y_pixel}")
+    return x_pixel, y_pixel
+
+def geojson_to_pixel_bboxes(coords, geo_transform, image_width, image_height):
+    """
+    Convert GeoJSON bounding boxes to image pixel bounding boxes.
+    """
+    pixel_coords = [geo_to_pixel(lon, lat, geo_transform, image_width, image_height) for lon, lat in coords]
+    x_coords = [p[0] for p in pixel_coords]
+    y_coords = [p[1] for p in pixel_coords]
+    x_min, x_max = min(x_coords), max(x_coords)
+    y_min, y_max = min(y_coords), max(y_coords)
+    
+    # print(f"Pixel Bounding Box: x_min={x_min}, x_max={x_max}, y_min={y_min}, y_max={y_max}")
+    return x_min, y_min, x_max, y_max
+
 def corner_to_center(bboxes):
     """
     Convert bounding boxes from corner format (x_min, y_min, x_max, y_max)
@@ -65,12 +161,59 @@ def clamp_bbox_centerwh(bboxes):
     return bboxes_clamped
 
 # ---------------------------------------------------------------------
+# Dataset Processing
+# ---------------------------------------------------------------------
+class processData(Dataset):
+    def __init__(self, image_folder, feature_folder, aux_folder, transform):
+        self.image_folder = image_folder
+        self.feature_folder = feature_folder
+        self.aux_folder = aux_folder
+        self.transform = transform
+
+        self.image_files = sorted([f for f in os.listdir(image_folder) if f.endswith('.png')])
+        self.label_files = sorted([f for f in os.listdir(feature_folder) if f.endswith('.geojson')])
+        self.aux_files = sorted([f for f in os.listdir(aux_folder) if f.endswith('.aux.xml')])
+
+    def __len__(self):
+        return len(self.image_files)
+
+    def __getitem__(self, idx):
+        img_path = os.path.join(self.image_folder, self.image_files[idx])
+        label_path = os.path.join(self.feature_folder, self.label_files[idx])
+        aux_path = os.path.join(self.aux_folder, self.aux_files[idx])
+
+        # Parse GeoTransform and GeoJSON
+        geo_transform = parse_geo_transform(aux_path)
+        coords, _ = read_geojson(label_path)
+
+        # Load and preprocess image
+        image = Image.open(img_path).convert('RGB')
+        width, height = image.size
+
+        # Convert GeoJSON to pixel bounding box
+        pixel_bbox = geojson_to_pixel_bboxes(coords, geo_transform, width, height)
+
+        x_min, y_min, x_max, y_max = pixel_bbox
+        x_min, x_max = x_min / width, x_max / width
+        y_min, y_max = y_min / height, y_max / height
+        cx = (x_min + x_max) / 2
+        cy = (y_min + y_max) / 2
+        w = (x_max - x_min)
+        h = (y_max - y_min)
+        centered_bbox = [cx, cy, w, h]
+
+        processed_image = self.transform(image)
+        processed_bbox = torch.tensor(centered_bbox, dtype=torch.float32)
+
+        return processed_image, processed_bbox
+    
+# ---------------------------------------------------------------------
 #  CNN Model
 # ---------------------------------------------------------------------
 class CNN(nn.Module):
-    def __init__(self, extra_in=3):
+    def __init__(self):
         """
-        :param extra_in: number of extra features (e.g. length, wingspan, wing_position_code).
+        CNN model for bounding box prediction from images.
         """
         super(CNN, self).__init__()
         # Convolutional backbone for images
@@ -89,20 +232,12 @@ class CNN(nn.Module):
         # After the third pool, if input is 512x512 => output size is 64x64 with 64 channels => 64 * 64 * 64
         self.flat_dim = 64 * 64 * 64
 
-        # A small MLP for the extra features
-        # You can make this bigger or smaller as you wish
-        self.extra_fc = nn.Sequential(
-            nn.Linear(extra_in, 16),
-            nn.ReLU()
-        )
+        # Fully connected layer for bounding box prediction
+        self.fc_final = nn.Linear(self.flat_dim, 4)
 
-        # Combine image features + extra features => final bounding box
-        self.fc_final = nn.Linear(self.flat_dim + 16, 4)
-
-    def forward(self, x, extras):
+    def forward(self, x):
         """
         :param x: image tensor (B, 3, 512, 512)
-        :param extras: extra feature tensor (B, extra_in)
         :return: bounding box (B, 4) => (cx, cy, w, h)
         """
         # CNN for image
@@ -111,103 +246,87 @@ class CNN(nn.Module):
         x = self.pool3(self.relu3(self.conv3(x)))
         x = x.view(-1, self.flat_dim)
 
-        # MLP for extras
-        e = self.extra_fc(extras)
-
-        # Combine
-        combined = torch.cat([x, e], dim=1)  # shape (B, flat_dim+16)
-        out = self.fc_final(combined)        # shape (B, 4)
+        # Predict bounding box
+        out = self.fc_final(x)  # shape (B, 4)
         return out
 
 # ---------------------------------------------------------------------
 #  Model Training and Evaluation
 # ---------------------------------------------------------------------
-def train_model(model, train_loader, optimizer, criterion, num_epochs=1, device='cpu'):
-    model.to(device)
-    batch_train_losses = []
-    batch_train_ious = []
+def train_model(model, train_loader, optimizer, criterion, device):
+    model.train()
+    epoch_loss = 0.0
+    epoch_iou = 0.0
+    num_batches = 0
 
-    for epoch in range(num_epochs):
-        model.train()
-        progress_bar = tqdm(train_loader, desc=f"Train Epoch {epoch+1}/{num_epochs}")
-        for images, extra_feats, targets in progress_bar:
-            images, extra_feats, targets = images.to(device), extra_feats.to(device), targets.to(device)
+    progress_bar = tqdm(train_loader, desc="Training")
+    for images, targets in progress_bar:
+        images, targets = images.to(device), targets.to(device)
 
-            optimizer.zero_grad()
-            outputs = model(images, extra_feats)  # Bounding box predictions
+        optimizer.zero_grad()
+        outputs = model(images)  # Bounding box predictions
 
-            # Compute loss
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
+        # Compute loss
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
 
-            # Compute IoU
-            preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
-            targets_corner = center_to_corner(targets)
-            iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
+        # Compute IoU
+        preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
+        targets_corner = center_to_corner(targets)
+        iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
 
-            batch_train_losses.append(loss.item())
-            batch_train_ious.append(iou)
+        # Update epoch metrics
+        epoch_loss += loss.item()
+        epoch_iou += iou
+        num_batches += 1
 
-            # Update progress bar
-            progress_bar.set_postfix(loss=loss.item(), iou=iou)
+        # Update progress bar
+        progress_bar.set_postfix(loss=loss.item(), iou=iou)
 
-    return batch_train_losses, batch_train_ious
+    # Average over the epoch
+    avg_loss = epoch_loss / num_batches
+    avg_iou = epoch_iou / num_batches
+    return avg_loss, avg_iou
 
-def validate_model(model, val_loader, criterion, device='cpu'):
+def validate_model(model, val_loader, criterion, device):
     model.eval()
-    batch_val_losses = []
-    batch_val_ious = []
+    epoch_loss = 0.0
+    epoch_iou = 0.0
+    num_batches = 0
 
     with torch.no_grad():
         progress_bar = tqdm(val_loader, desc="Validation")
-        for images, extra_feats, targets in progress_bar:
-            images, extra_feats, targets = images.to(device), extra_feats.to(device), targets.to(device)
+        for images, targets in progress_bar:
+            images, targets = images.to(device), targets.to(device)
 
-            outputs = model(images, extra_feats)  # Bounding box predictions
+            outputs = model(images)  # Bounding box predictions
 
             # Compute loss
             loss = criterion(outputs, targets)
-            batch_val_losses.append(loss.item())
 
             # Compute IoU
             preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
             targets_corner = center_to_corner(targets)
             iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
-            batch_val_ious.append(iou)
+
+            # Update epoch metrics
+            epoch_loss += loss.item()
+            epoch_iou += iou
+            num_batches += 1
 
             # Update progress bar
             progress_bar.set_postfix(loss=loss.item(), iou=iou)
 
-    return batch_val_losses, batch_val_ious
+    # Average over the epoch
+    avg_loss = epoch_loss / num_batches
+    avg_iou = epoch_iou / num_batches
+    return avg_loss, avg_iou
 
 # ---------------------------------------------------------------------
 #  Resluts and Analysis
-# ---------------------------------------------------------------------
-def analyze_feature_importance(model, feature_names, output_folder='./results/CNN'):
-    """
-    Analyzes the importance of each input feature by looking at the model's learned weights.
-    Produces and saves a bar plot of feature importance.
-    """
-    os.makedirs(output_folder, exist_ok=True)
-
-    # Extract learned weights for the extra features
-    feature_weights = model.extra_fc[0].weight.abs().mean(dim=0).detach().cpu().numpy()
-
-    # Plot
-    plt.figure(figsize=(10, 6))
-    plt.barh(feature_names, feature_weights, color='steelblue')
-    plt.xlabel("Average Weight Magnitude")
-    plt.ylabel("Feature")
-    plt.title("Feature Importance")
-    plt.grid(axis='x')
-
-    plot_path = os.path.join(output_folder, 'feature_importance.png')
-    plt.savefig(plot_path)
-    plt.show()
-    print(f"Feature importance plot saved to {plot_path}")
-    
-def generate_predictions(model, val_dataset, device='cpu', output_folder='./results/CNN', num_images=16):
+# --------------------------------------------------------------------- 
+def generate_predictions(model, val_dataset, device, output_folder, num_images=16):
     """
     Picks 16 random images from val_dataset, predicts their bounding boxes,
     draws them along with true bounding boxes, and saves the results in a grid format.
@@ -227,14 +346,13 @@ def generate_predictions(model, val_dataset, device='cpu', output_folder='./resu
         for idx in range(num_images):
             # Select a random sample
             random_idx = random.randint(0, len(val_dataset) - 1)
-            image, extra_feats, true_bbox = val_dataset[random_idx]
+            image, true_bbox = val_dataset[random_idx]  # Now only returns image and true_bbox
 
             # Prepare inputs
             image_input = image.unsqueeze(0).to(device)  # Add batch dimension
-            extra_feats_input = extra_feats.unsqueeze(0).to(device)
 
             # Get predictions
-            pred_bbox = model(image_input, extra_feats_input)[0].cpu()  # Predicted bounding box in (cx, cy, w, h)
+            pred_bbox = model(image_input)[0].cpu()  # Predicted bounding box in (cx, cy, w, h)
             pred_bbox = clamp_bbox_centerwh(pred_bbox.unsqueeze(0))[0]  # Clamp predictions to [0,1]
             pred_corner = center_to_corner(pred_bbox.unsqueeze(0))[0]  # Convert to (x_min, y_min, x_max, y_max)
 
@@ -272,7 +390,7 @@ def generate_predictions(model, val_dataset, device='cpu', output_folder='./resu
     plt.show()
     print(f"Random predictions grid saved to {grid_path}")
 
-def evaluate_iou(model, val_loader, device='cpu'):
+def evaluate_iou(model, val_loader, device):
     """
     Compute average IoU across the validation set for single bounding-box predictions.
     The target bounding boxes are in (cx, cy, w, h) [normalized].
@@ -282,12 +400,11 @@ def evaluate_iou(model, val_loader, device='cpu'):
     count = 0
 
     with torch.no_grad():
-        for (images, extra_feats, targets) in val_loader:
+        for images, targets in val_loader:  # Now only unpack images and targets
             images = images.to(device)
-            extra_feats = extra_feats.to(device)
             targets = targets.to(device)
 
-            preds = model(images, extra_feats)  # shape: (batch_size, 4)
+            preds = model(images)  # shape: (batch_size, 4)
             preds = clamp_bbox_centerwh(preds)  # Clamp to [0, 1]
             preds_corner = center_to_corner(preds)  # Convert to corner format
             targets_corner = center_to_corner(targets)  # Convert targets to corner format
@@ -301,109 +418,113 @@ def evaluate_iou(model, val_loader, device='cpu'):
     avg_iou = total_iou / count if count > 0 else 0.0
     return avg_iou
 
-def plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_val_ious, output_folder='./results/CNN'):
+def plot_training(train_losses, val_losses, train_ious, val_ious, output_folder):
     """
-    Plots and saves continuous loss and IoU metrics for all batches across epochs.
+    Plots and saves loss and IoU metrics over epochs.
     """
     os.makedirs(output_folder, exist_ok=True)
-    train_batches = range(1, len(batch_train_losses) + 1)
-    val_batches = range(1, len(batch_val_losses) + 1)
+    epochs = range(1, len(train_losses) + 1)
 
     # Plot Loss
     plt.figure(figsize=(10, 6))
-    plt.plot(train_batches, batch_train_losses, label='Train Loss', marker='o', linestyle='-', markersize=2)
-    plt.plot(val_batches, batch_val_losses, label='Validation Loss', marker='x', linestyle='-', markersize=2)
-    plt.title('Continuous Loss During Training and Validation')
-    plt.xlabel('Batches (Cumulative)')
+    plt.plot(epochs, train_losses, label='Train Loss', marker='o', linestyle='-', markersize=5)
+    plt.plot(epochs, val_losses, label='Validation Loss', marker='x', linestyle='-', markersize=5)
+    plt.title('Loss Over Epochs')
+    plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_folder, 'continuous_loss_curve.png'))
+    plt.savefig(os.path.join(output_folder, 'loss_curve.png'))
     plt.show()
 
     # Plot IoU
     plt.figure(figsize=(10, 6))
-    plt.plot(train_batches, batch_train_ious, label='Train IoU', marker='o', linestyle='-', markersize=2)
-    plt.plot(val_batches, batch_val_ious, label='Validation IoU', marker='x', linestyle='-', markersize=2)
-    plt.title('Continuous IoU During Training and Validation')
-    plt.xlabel('Batches (Cumulative)')
+    plt.plot(epochs, train_ious, label='Train IoU', marker='o', linestyle='-', markersize=5)
+    plt.plot(epochs, val_ious, label='Validation IoU', marker='x', linestyle='-', markersize=5)
+    plt.title('IoU Over Epochs')
+    plt.xlabel('Epochs')
     plt.ylabel('IoU')
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_folder, 'continuous_iou_curve.png'))
+    plt.savefig(os.path.join(output_folder, 'iou_curve.png'))
     plt.show()
 
 # ---------------------------------------------------------------------
 #  Main Function
 # ---------------------------------------------------------------------
-def main(lr=0.001, batch_size=16, num_epochs=1, device='cpu'):
-    # File paths
-    train_folder = './data/processed/train/'
-    val_folder = './data/processed/test/'
-    output_folder = './results/CNN'
+def main(lr=0.001, batch_size=16, num_epochs=3, device='cpu'):
+    # Paths
+    train_image_folder = r"./data/raw/train/PS-RGB_tiled"
+    train_feature_folder = r"./data/raw/train/geojson_aircraft_tiled"
+    train_aux_folder = r"./data/raw/train/PS-RGB_tiled"
+    test_image_folder = r"./data/raw/test/PS-RGB_tiled"
+    test_feature_folder = r"./data/raw/test/geojson_aircraft_tiled"
+    test_aux_folder = r"./data/raw/test/PS-RGB_tiled"
 
+    # Create a unique folder for each run
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # Current date and time
+    run_name = f"lr({lr})_bs({batch_size})_epochs({num_epochs})__{timestamp}"  # Unique run name
+    output_folder = os.path.join(r"./results/CNN", run_name)  # Combine base folder with run name
     os.makedirs(output_folder, exist_ok=True)
 
-    # Load processed datasets
-    train_images = torch.load(os.path.join(train_folder, 'images.pt'), weights_only=True)
-    train_features = torch.load(os.path.join(train_folder, 'features.pt'),weights_only=True)
-    val_images = torch.load(os.path.join(val_folder, 'images.pt'))
-    val_features = torch.load(os.path.join(val_folder, 'features.pt'))
-    
-    # Separate bounding boxes and additional features
-    train_bboxes = train_features[:, :4]  # First 4 values are the bounding box
-    train_extras = train_features[:, 4:]  # Remaining values are additional features
-    val_bboxes = val_features[:, :4]
-    val_extras = val_features[:, 4:]
-    
-    # Prepare Datasets and DataLoaders
-    train_dataset = TensorDataset(train_images, train_extras, train_bboxes)
-    val_dataset = TensorDataset(val_images, val_extras, val_bboxes)
+    # Transformations
+    transform = transforms.Compose([
+        transforms.Resize((512, 512)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    ])
+
+    # Create datasets and loaders
+    train_dataset = processData(train_image_folder, train_feature_folder, train_aux_folder, transform)
+    test_dataset = processData(test_image_folder, test_feature_folder, test_aux_folder, transform)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     # Model, optimizer, and loss
-    model = CNN(extra_in=len(train_dataset[0][1]))  # Extra features dynamically determined
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)  # Add weight decay
+    model = CNN()
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     criterion = nn.SmoothL1Loss()
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
-    batch_train_losses, batch_train_ious = [], []
-    batch_val_losses, batch_val_ious = [], []
+    train_losses = []
+    train_ious = []
+    val_losses = []
+    val_ious = []
 
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
 
         # Train
-        train_losses, train_ious = train_model(model, train_loader, optimizer, criterion, num_epochs=1, device=device)
-        batch_train_losses.extend(train_losses)
-        batch_train_ious.extend(train_ious)
+        avg_train_loss, avg_train_iou = train_model(model, train_loader, optimizer, criterion, device)
+        train_losses.append(avg_train_loss)
+        train_ious.append(avg_train_iou)
 
         # Validate
-        val_losses, val_ious = validate_model(model, val_loader, criterion, device=device)
-        batch_val_losses.extend(val_losses)
-        batch_val_ious.extend(val_ious)
+        avg_val_loss, avg_val_iou = validate_model(model, test_loader, criterion, device)
+        val_losses.append(avg_val_loss)
+        val_ious.append(avg_val_iou)
 
         # Update scheduler
-        scheduler.step(val_losses[-1])  # Update learning rate based on the latest validation loss
+        scheduler.step(avg_val_loss)  # Update learning rate based on the latest validation loss
 
-    # Generate predictions
-    generate_predictions(model, val_dataset, device=device, output_folder=output_folder)
-
-    # Analyze feature importance
-    feature_names = [
-        "length", "wingspan", "area", 
-        "wing_type_code", "wing_position_code", 
-        "canard", "num_engines", "num_tailfins", "faa_class"]
-    analyze_feature_importance(model, feature_names, output_folder)
-
-    # Save model
-    avg_iou = evaluate_iou(model, val_loader, device=device)
-    print(f"Average Validation IoU: {avg_iou:.4f}")
+        # Print epoch results
+        print(f"Train Loss: {avg_train_loss:.4f}, Train IoU: {avg_train_iou:.4f}")
+        print(f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}")
 
     # Plot training progress
-    plot_training(batch_train_losses, batch_val_losses, batch_train_ious, batch_val_ious, output_folder)
+    plot_training(train_losses, val_losses, train_ious, val_ious, output_folder)
+
+    # Generate predictions
+    generate_predictions(model, test_dataset, device=device, output_folder=output_folder)
+
+    # Save model
+    model_path = os.path.join(output_folder, 'cnn_model.pth')
+    torch.save(model.state_dict(), model_path)
+
+    # Evaluate IoU
+    avg_iou = evaluate_iou(model, test_loader, device=device)
+    print(f"Average Validation IoU: {avg_iou:.4f}")
     print("Training completed!")
 
 if __name__ == "__main__":
-    main(lr=0.001, batch_size=16, num_epochs=3, device='cpu')
+    main(lr=0.001, batch_size=16, num_epochs=5, device='cpu')
