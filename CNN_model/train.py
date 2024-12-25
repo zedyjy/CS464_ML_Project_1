@@ -230,7 +230,7 @@ class CNN(nn.Module):
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         # After the third pool, if input is 512x512 => output size is 64x64 with 64 channels => 64 * 64 * 64
-        self.flat_dim = 64 * 64 * 64
+        self.flat_dim = 32 * 32 * 64
 
         # Fully connected layer for bounding box prediction
         self.fc_final = nn.Linear(self.flat_dim, 4)
@@ -265,12 +265,22 @@ def train_model(model, train_loader, optimizer, criterion, device):
 
         optimizer.zero_grad()
         outputs = model(images)  # Bounding box predictions
+        optimizer.zero_grad()
+        outputs = model(images)  # Bounding box predictions
 
         # Compute loss
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
+        # Compute loss
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
 
+        # Compute IoU
+        preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
+        targets_corner = center_to_corner(targets)
+        iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
         # Compute IoU
         preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
         targets_corner = center_to_corner(targets)
@@ -299,7 +309,10 @@ def validate_model(model, val_loader, criterion, device):
         progress_bar = tqdm(val_loader, desc="Validation")
         for images, targets in progress_bar:
             images, targets = images.to(device), targets.to(device)
+        for images, targets in progress_bar:
+            images, targets = images.to(device), targets.to(device)
 
+            outputs = model(images)  # Bounding box predictions
             outputs = model(images)  # Bounding box predictions
 
             # Compute loss
@@ -334,17 +347,14 @@ def generate_predictions(model, val_dataset, device, output_folder, num_images=1
     os.makedirs(output_folder, exist_ok=True)
     model.eval()
 
-    # Define mean and std used for normalization
     mean = torch.tensor([0.5, 0.5, 0.5])
     std = torch.tensor([0.5, 0.5, 0.5])
 
-    # Prepare a grid to store results
-    grid_size = int(num_images ** 0.5)  # Assuming square grid (e.g., 4x4 for 16 images)
+    grid_size = int(num_images ** 0.5)
     fig, axs = plt.subplots(grid_size, grid_size, figsize=(12, 12))
 
     with torch.no_grad():
         for idx in range(num_images):
-            # Select a random sample
             random_idx = random.randint(0, len(val_dataset) - 1)
             image, true_bbox = val_dataset[random_idx]  # Now only returns image and true_bbox
 
@@ -360,30 +370,25 @@ def generate_predictions(model, val_dataset, device, output_folder, num_images=1
             image_denorm = image * std[:, None, None] + mean[:, None, None]
             pil_image = transforms.ToPILImage()(image_denorm).convert('RGB')
 
-            # Scale predicted bbox to pixel coordinates
             width, height = pil_image.size
             x_min, y_min, x_max, y_max = pred_corner
             x_min, x_max = x_min * width, x_max * width
             y_min, y_max = y_min * height, y_max * height
 
-            # True bbox
-            true_corner = center_to_corner(true_bbox.unsqueeze(0))[0]  # Convert to (x_min, y_min, x_max, y_max)
+            true_corner = center_to_corner(true_bbox.unsqueeze(0))[0]
             x_min_t, y_min_t, x_max_t, y_max_t = true_corner
             x_min_t, x_max_t = x_min_t * width, x_max_t * width
             y_min_t, y_max_t = y_min_t * height, y_max_t * height
 
-            # Draw true and predicted bounding boxes
             draw = ImageDraw.Draw(pil_image)
-            draw.rectangle([x_min, y_min, x_max, y_max], outline='red', width=3)  # Predicted bbox
-            draw.rectangle([x_min_t, y_min_t, x_max_t, y_max_t], outline='green', width=3)  # True bbox
+            draw.rectangle([x_min, y_min, x_max, y_max], outline='red', width=3)
+            draw.rectangle([x_min_t, y_min_t, x_max_t, y_max_t], outline='green', width=3)
 
-            # Plot on the grid
             ax = axs[idx // grid_size, idx % grid_size]
             ax.imshow(pil_image)
             ax.axis('off')
             ax.set_title(f"Sample {random_idx}")
 
-    # Save the grid of images
     grid_path = os.path.join(output_folder, "random_predictions_grid.png")
     plt.tight_layout()
     plt.savefig(grid_path)
@@ -423,6 +428,7 @@ def plot_training(train_losses, val_losses, train_ious, val_ious, output_folder)
     Plots and saves loss and IoU metrics over epochs.
     """
     os.makedirs(output_folder, exist_ok=True)
+    epochs = range(1, len(train_losses) + 1)
     epochs = range(1, len(train_losses) + 1)
 
     # Plot Loss
