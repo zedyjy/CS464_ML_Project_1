@@ -4,10 +4,11 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
 from torchvision import transforms
-from torchvision.models import resnet18
+from torchvision.models import resnet18, ResNet18_Weights
 from torchvision.ops import box_iou
 from torchvision.ops import generalized_box_iou
 from torch.utils.data import Dataset, DataLoader
@@ -177,7 +178,7 @@ def giou_loss(preds, targets):
     preds_corner = center_to_corner(preds)
     targets_corner = center_to_corner(targets)
     giou = generalized_box_iou(preds_corner, targets_corner)
-    if giou.numel() == 0:  # Avoid division by zero
+    if giou.numel() == 0:
         return torch.tensor(1.0, requires_grad=True)
     return 1 - giou.diagonal().mean()
 
@@ -185,6 +186,12 @@ def combined_loss(preds, targets, alpha=0.5):
     iou = iou_loss(preds, targets)
     regression_loss = nn.SmoothL1Loss()(preds, targets)
     return alpha * iou + (1 - alpha) * regression_loss
+
+def weighted_smooth_l1(preds, targets, alpha=10.0):
+    regression_loss = nn.SmoothL1Loss(reduction='none')(preds, targets)
+    weights = torch.abs(preds - targets)
+    weighted_loss = alpha * weights * regression_loss
+    return weighted_loss.mean()
 
 # ---------------------------------------------------------------------
 # Dataset Processing
@@ -239,7 +246,7 @@ class processData(Dataset):
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.backbone = resnet18(pretrained=True)
+        self.backbone = resnet18(weights=ResNet18_Weights.DEFAULT)
         self.backbone.fc = nn.Linear(self.backbone.fc.in_features, 4)
 
     def forward(self, x):
@@ -504,23 +511,6 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
     test_feature_folder = r"./data/raw/test/geojson_aircraft_tiled"
     test_aux_folder = r"./data/raw/test/PS-RGB_tiled"
 
-    # Create a unique folder for each run
-    timestamp = datetime.now().strftime("%H:%M__%d.%m.%y")  # Format: hour:min__day.month.year
-    output_folder = os.path.join(r"./results/CNN", timestamp)  # Combine base folder with timestamp
-    os.makedirs(output_folder, exist_ok=True)
-    
-    # Save training parameters to a file
-    param_file = os.path.join(output_folder, 'parameters.txt')
-    with open(param_file, 'w') as f:
-        f.write(f"Learning Rate: {lr}\n")
-        f.write(f"Batch Size: {batch_size}\n")
-        f.write(f"Num Epochs: {num_epochs}\n")
-        f.write(f"Pixel Size: {pixel_size}\n")
-        f.write(f"Device: {device}\n")
-        f.write(f"Loss Function: {loss_fn}\n")
-        f.write(f"Reduce Data: {reduce_data}\n")
-
-
     # Training transformation with augmentation
     train_transform = transforms.Compose([
         transforms.Resize((pixel_size, pixel_size)),
@@ -539,24 +529,24 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
     ])
 
     # Create datasets and loaders
+    train_dataset = processData(train_image_folder, train_feature_folder, train_aux_folder, train_transform)
+    test_dataset = processData(test_image_folder, test_feature_folder, test_aux_folder, test_transform)
+
+    # Reduce data for faster training
     if reduce_data:
         train_size = int(0.25 * len(train_dataset))
         test_size = int(0.10 * len(test_dataset))
         train_dataset, _ = torch.utils.data.random_split(train_dataset, [train_size, len(train_dataset) - train_size])
         test_dataset, _ = torch.utils.data.random_split(test_dataset, [test_size, len(test_dataset) - test_size])
-    else:
-        train_dataset = processData(train_image_folder, train_feature_folder, train_aux_folder, train_transform)
-        test_dataset = processData(test_image_folder, test_feature_folder, test_aux_folder, test_transform)
-    
+
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     # Model, optimizer, and loss
     model = CNN()
     model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)  # Adjust T_max based on epochs
-    
+    optimizer = optim.Adam(model.parameters(), lr=lr,)
+
     # Select loss function
     if loss_fn == 'giou_loss':
         criterion = giou_loss
@@ -566,6 +556,8 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
         criterion = combined_loss
     elif loss_fn == 'SmoothL1_loss':
         criterion = nn.SmoothL1Loss()
+    elif loss_fn == 'weighted_smooth_l1':
+        criterion = weighted_smooth_l1
     else:
         raise ValueError(f"Unsupported loss function: {loss_fn}")
 
@@ -587,12 +579,25 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
         val_losses.append(avg_val_loss)
         val_ious.append(avg_val_iou)
 
-        # Update scheduler
-        scheduler.step(avg_val_loss)  # Update learning rate based on the latest validation loss
-
         # Print epoch results
         print(f"Train Loss: {avg_train_loss:.4f}, Train IoU: {avg_train_iou:.4f}")
         print(f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}")
+
+    # Create a unique folder for each run
+    timestamp = datetime.now().strftime("%H_%M__%d_%m_%y")  # Format: HH_MM__DD_MM_YY
+    output_folder = os.path.join(r"./results/CNN", timestamp)  # Combine base folder with timestamp
+    os.makedirs(output_folder, exist_ok=True)
+    
+    # Save training parameters to a file
+    param_file = os.path.join(output_folder, 'parameters.txt')
+    with open(param_file, 'w') as f:
+        f.write(f"Learning Rate: {lr}\n")
+        f.write(f"Batch Size: {batch_size}\n")
+        f.write(f"Num Epochs: {num_epochs}\n")
+        f.write(f"Pixel Size: {pixel_size}\n")
+        f.write(f"Device: {device}\n")
+        f.write(f"Loss Function: {loss_fn}\n")
+        f.write(f"Reduce Data: {reduce_data}\n")
 
     # Plot training progress
     plot_training(train_losses, val_losses, train_ious, val_ious, output_folder)
@@ -605,10 +610,9 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
     torch.save(model.state_dict(), model_path)
 
     # Evaluate IoU
-    print("Evaluating average IoU on the validation set...")
     avg_iou = evaluate_iou(model, test_loader, device=device)
     print(f"Average Validation IoU: {avg_iou:.4f}")
     print("Training completed!")
 
 if __name__ == "__main__":
-    main(lr=0.001, batch_size=8, num_epochs=20, pixel_size=256, device='cpu')
+   main(lr=1e-4, batch_size=16, num_epochs=50, pixel_size=512, device='cuda', loss_fn='weighted_smooth_l1', reduce_data=True)
