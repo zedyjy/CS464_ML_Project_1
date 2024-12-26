@@ -8,9 +8,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
 from torchvision import transforms
-from torchvision.models import resnet18, ResNet18_Weights
-from torchvision.ops import box_iou
-from torchvision.ops import generalized_box_iou
+from torchvision import models, ops
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image, ImageDraw
 from datetime import datetime
@@ -163,35 +161,15 @@ def clamp_bbox_centerwh(bboxes):
     bboxes_clamped[:, 3] = torch.clamp(bboxes[:, 3], 0.0, 1.0)
     return bboxes_clamped
 
-# ---------------------------------------------------------------------
-#  Loss Functions
-# ---------------------------------------------------------------------
-def iou_loss(preds, targets):
-    preds_corner = center_to_corner(preds)
-    targets_corner = center_to_corner(targets)
-    iou = box_iou(preds_corner, targets_corner)
-    if iou.numel() == 0:  # Avoid division by zero
-        return torch.tensor(1.0, requires_grad=True)
-    return 1 - iou.diagonal().mean()
-
-def giou_loss(preds, targets):
-    preds_corner = center_to_corner(preds)
-    targets_corner = center_to_corner(targets)
-    giou = generalized_box_iou(preds_corner, targets_corner)
-    if giou.numel() == 0:
-        return torch.tensor(1.0, requires_grad=True)
-    return 1 - giou.diagonal().mean()
-
-def combined_loss(preds, targets, alpha=0.5):
-    iou = iou_loss(preds, targets)
-    regression_loss = nn.SmoothL1Loss()(preds, targets)
-    return alpha * iou + (1 - alpha) * regression_loss
-
-def weighted_smooth_l1(preds, targets, alpha=10.0):
-    regression_loss = nn.SmoothL1Loss(reduction='none')(preds, targets)
-    weights = torch.abs(preds - targets)
-    weighted_loss = alpha * weights * regression_loss
-    return weighted_loss.mean()
+def iou_func(bbox1, bbox2):
+    """
+    Compute the Intersection over Union (IoU) of two bounding boxes.
+    bbox1, bbox2: tensors of shape (N, 4) in corner format (x_min, y_min, x_max, y_max).
+    """
+    bbox1_corner = center_to_corner(bbox1)
+    bbox2_corner = center_to_corner(bbox2)
+    iou = ops.box_iou(bbox1_corner, bbox2_corner).diagonal().mean().item()
+    return iou
 
 # ---------------------------------------------------------------------
 # Dataset Processing
@@ -246,129 +224,79 @@ class processData(Dataset):
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.backbone = resnet18(weights=ResNet18_Weights.DEFAULT)
-        self.backbone.fc = nn.Linear(self.backbone.fc.in_features, 4)
+        # Load a pretrained ResNet-18 model
+        self.backbone = models.resnet18(pretrained=True)
+        # self.backbone.fc = nn.Linear(self.backbone.fc.in_features, 4)
+        
+        # Optionally freeze all layers
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+         # Optionally unfreeze `layer4`
+        for child in self.backbone.layer4.named_children():
+            for param in child[1].parameters():
+                param.requires_grad = True
+
+        # Optionally unfreeze the fully connected layer
+        for param in self.backbone.fc.parameters():
+            param.requires_grad = True
+
+        # Replace the final fully connected layer to match `output_features`
+        self.backbone.fc = nn.Linear(in_features=512, out_features=4, bias=True)
 
     def forward(self, x):
-        return self.backbone(x)
-    
-    # def __init__(self, input_size):
-    #     """
-    #     CNN model for bounding box prediction from images.
-    #     Automatically computes the size of the fully connected layer.
-    #     :param input_size: The size of the input image (e.g., 512 for 512x512 images).
-    #     """
-    #     super(CNN, self).__init__()
-    #     self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1)
-    #     self.bn1 = nn.BatchNorm2d(32)
-    #     self.relu1 = nn.ReLU()
-    #     self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-    #     self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-    #     self.bn2 = nn.BatchNorm2d(64)
-    #     self.relu2 = nn.ReLU()
-    #     self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-    #     self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-    #     self.bn3 = nn.BatchNorm2d(128)
-    #     self.relu3 = nn.ReLU()
-    #     self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-    #     # Calculate flat_dim dynamically based on input_size and number of pooling layers
-    #     final_size = input_size // (2 ** 3)  # 3 pooling layers
-    #     self.flat_dim = final_size * final_size * 128
-
-    #     # Fully connected layer for bounding box prediction
-    #     self.fc_final = nn.Linear(self.flat_dim, 4)
-
-    # def forward(self, x):
-    #     """
-    #     :param x: image tensor (B, 3, input_size, input_size)
-    #     :return: bounding box (B, 4) => (cx, cy, w, h)
-    #     """
-    #     # CNN for image
-    #     x = self.pool1(self.relu1(self.conv1(x)))
-    #     x = self.pool2(self.relu2(self.conv2(x)))
-    #     x = self.pool3(self.relu3(self.conv3(x)))
-    #     x = x.view(x.size(0), -1)  # Flatten maintaining batch size
-
-    #     # Predict bounding box
-    #     out = self.fc_final(x)  # shape (B, 4)
-    #     return out
-    
+        return torch.sigmoid(self.backbone(x))
 
 # ---------------------------------------------------------------------
-#  Model Training and Evaluation
+#  Model Training and Validation
 # ---------------------------------------------------------------------
-def train_model(model, train_loader, optimizer, criterion, device):
+def train_model(model, train_loader, optimizer, criterion, num_epochs, device, epoch):
     model.train()
     epoch_loss = 0.0
     epoch_iou = 0.0
     num_batches = 0
-
-    progress_bar = tqdm(train_loader, desc="Training")
+    
+    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch +1}/{num_epochs} Training")
     for images, targets in progress_bar:
         images, targets = images.to(device), targets.to(device)
-
-        optimizer.zero_grad()
-        outputs = model(images)  # Bounding box predictions
-
-        # Compute loss
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
-
-        # Compute IoU
-        preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
-        targets_corner = center_to_corner(targets)
-        iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
-
-        # Update epoch metrics
-        epoch_loss += loss.item()
-        epoch_iou += iou
-        num_batches += 1
-
-        # Update progress bar
-        progress_bar.set_postfix(loss=loss.item(), iou=iou)
+        optimizer.zero_grad() # Zero out gradients
+        outputs = model(images)  # Forward Propagation
+        loss = criterion(outputs, targets) # Compute loss
+        loss.backward() # Backward Propagation
+        optimizer.step() # Update weights
+        epoch_loss += loss.item() # Update epoch loss
+        iou = iou_func(outputs, targets) # Compute IoU
+        epoch_iou += iou # Update epoch IoU
+        num_batches += 1 # Update number of batches
+        progress_bar.set_postfix(loss=loss.item(), IoU=iou) # Update progress bar
 
     # Average over the epoch
     avg_loss = epoch_loss / num_batches
     avg_iou = epoch_iou / num_batches
-    return avg_loss, avg_iou
+    return avg_loss, avg_iou, model
 
-def validate_model(model, val_loader, criterion, device):
+def validate_model(model, val_loader, criterion, num_epochs, device, epoch):
     model.eval()
     epoch_loss = 0.0
     epoch_iou = 0.0
     num_batches = 0
 
     with torch.no_grad():
-        progress_bar = tqdm(val_loader, desc="Validation")
+        progress_bar = tqdm(val_loader, desc=f"Epoch {epoch +1}/{num_epochs} Validating")
         for images, targets in progress_bar:
             images, targets = images.to(device), targets.to(device)
-
             outputs = model(images)  # Bounding box predictions
-
-            # Compute loss
-            loss = criterion(outputs, targets)
-
-            # Compute IoU
-            preds_corner = center_to_corner(clamp_bbox_centerwh(outputs))
-            targets_corner = center_to_corner(targets)
-            iou = box_iou(preds_corner, targets_corner).diagonal().mean().item()
-
-            # Update epoch metrics
-            epoch_loss += loss.item()
-            epoch_iou += iou
-            num_batches += 1
-
-            # Update progress bar
-            progress_bar.set_postfix(loss=loss.item(), iou=iou)
+            loss = criterion(outputs, targets) # Compute loss
+            epoch_loss += loss.item() # Update epoch loss
+            iou = iou_func(outputs, targets) # Compute IoU
+            epoch_iou += iou # Update epoch IoU
+            num_batches += 1 # Update number of batches
+            progress_bar.set_postfix(loss=loss.item(), IoU=iou) # Update progress bar
 
     # Average over the epoch
     avg_loss = epoch_loss / num_batches
     avg_iou = epoch_iou / num_batches
-    return avg_loss, avg_iou
+    return avg_loss, avg_iou, model
 
 # ---------------------------------------------------------------------
 #  Resluts and Analysis
@@ -428,34 +356,6 @@ def generate_predictions(model, val_dataset, device, output_folder, num_images=1
     plt.savefig(grid_path)
     plt.show()
 
-def evaluate_iou(model, val_loader, device):
-    """
-    Compute average IoU across the validation set for single bounding-box predictions.
-    The target bounding boxes are in (cx, cy, w, h) [normalized].
-    """
-    model.eval()
-    total_iou = 0.0
-    count = 0
-
-    with torch.no_grad():
-        for images, targets in val_loader:  # Now only unpack images and targets
-            images = images.to(device)
-            targets = targets.to(device)
-
-            preds = model(images)  # shape: (batch_size, 4)
-            preds = clamp_bbox_centerwh(preds)  # Clamp to [0, 1]
-            preds_corner = center_to_corner(preds)  # Convert to corner format
-            targets_corner = center_to_corner(targets)  # Convert targets to corner format
-
-            # Compute IoU for the batch
-            iou_values = box_iou(preds_corner, targets_corner)  # IoU matrix
-            batch_iou = iou_values.diagonal().mean().item()  # Mean IoU for the batch
-            total_iou += batch_iou * images.size(0)  # Sum IoUs weighted by batch size
-            count += images.size(0)
-
-    avg_iou = total_iou / count if count > 0 else 0.0
-    return avg_iou
-
 def plot_training(train_losses, val_losses, train_ious, val_ious, output_folder):
     """
     Plots and saves loss and IoU metrics over epochs.
@@ -491,8 +391,7 @@ def plot_training(train_losses, val_losses, train_ious, val_ious, output_folder)
 # ---------------------------------------------------------------------
 #  Main Function
 # ---------------------------------------------------------------------
-def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu', 
-         loss_fn='giou_loss', reduce_data=False):
+def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cuda', reduce_data=False):
     """
     Main function to train and validate the CNN model.
     :param lr: Learning rate
@@ -503,7 +402,9 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
     :param loss_fn: Loss function to use ('SmoothL1_loss', 'iou_loss', 'giou_loss', 'combined_loss')
     :param reduce_data: Reduce data to a smaller subset for faster training
     """
-    # Paths
+    
+    #  Data Processing
+    # ---------------------------------------------------------------------
     train_image_folder = r"./data/raw/train/PS-RGB_tiled"
     train_feature_folder = r"./data/raw/train/geojson_aircraft_tiled"
     train_aux_folder = r"./data/raw/train/PS-RGB_tiled"
@@ -514,18 +415,18 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
     # Training transformation with augmentation
     train_transform = transforms.Compose([
         transforms.Resize((pixel_size, pixel_size)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(15),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        # transforms.RandomHorizontalFlip(),
+        # transforms.RandomRotation(15),
+        # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
     # Test transformation (no augmentation)
     test_transform = transforms.Compose([
         transforms.Resize((pixel_size, pixel_size)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
     # Create datasets and loaders
@@ -539,54 +440,50 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
         train_dataset, _ = torch.utils.data.random_split(train_dataset, [train_size, len(train_dataset) - train_size])
         test_dataset, _ = torch.utils.data.random_split(test_dataset, [test_size, len(test_dataset) - test_size])
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    # Model, optimizer, and loss
+    #  Model Initialization
+    # ---------------------------------------------------------------------
+    if not torch.cuda.is_available() and device == 'cuda': # Check if CUDA is available
+        print("CUDA is not available. Switching to CPU.")
+        device = 'cpu'
+
     model = CNN()
     model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=lr,)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr) # Stochastic Gradient Descent
+    criterion = nn.MSELoss()  # Mean Squared Error Loss
+    # print(model)
 
-    # Select loss function
-    if loss_fn == 'giou_loss':
-        criterion = giou_loss
-    elif loss_fn == 'iou_loss':
-        criterion = iou_loss
-    elif loss_fn == 'combined_loss':
-        criterion = combined_loss
-    elif loss_fn == 'SmoothL1_loss':
-        criterion = nn.SmoothL1Loss()
-    elif loss_fn == 'weighted_smooth_l1':
-        criterion = weighted_smooth_l1
-    else:
-        raise ValueError(f"Unsupported loss function: {loss_fn}")
-
-    train_losses = []
-    train_ious = []
-    val_losses = []
-    val_ious = []
+    #  Training Loop
+    # ---------------------------------------------------------------------
+    training_losses = []
+    training_ious = []
+    validation_losses = []
+    validation_ious = []
 
     for epoch in range(num_epochs):
-        print(f"Epoch {epoch + 1}/{num_epochs}")
+        
+        train_loss, train_iou, _ = train_model(model, train_loader, optimizer, criterion, num_epochs, device, epoch) # Train the model
+        val_loss, val_iou, _ = validate_model(model, test_loader, criterion, num_epochs, device, epoch) # Validate the model
 
-        # Train
-        avg_train_loss, avg_train_iou = train_model(model, train_loader, optimizer, criterion, device)
-        train_losses.append(avg_train_loss)
-        train_ious.append(avg_train_iou)
+        # Print training and validation metrics
+        print(f"Train Loss: {train_loss:.4f}, Train IoU: {train_iou:.4f}")
+        print(f"Validation Loss: {val_loss:.4f}, Validation IoU: {val_iou:.4f}")
 
-        # Validate
-        avg_val_loss, avg_val_iou = validate_model(model, test_loader, criterion, device)
-        val_losses.append(avg_val_loss)
-        val_ious.append(avg_val_iou)
+        # Save training metrics
+        training_losses.append(train_loss)
+        training_ious.append(train_iou)
+        validation_losses.append(val_loss)
+        validation_ious.append(val_iou)
+        
+        epoch += 1
 
-        # Print epoch results
-        print(f"Train Loss: {avg_train_loss:.4f}, Train IoU: {avg_train_iou:.4f}")
-        print(f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}")
-
-    # Create a unique folder for each run
+    #  Results and Analysis
+    # ---------------------------------------------------------------------
     timestamp = datetime.now().strftime("%H_%M__%d_%m_%y")  # Format: HH_MM__DD_MM_YY
-    output_folder = os.path.join(r"./results/CNN", timestamp)  # Combine base folder with timestamp
-    os.makedirs(output_folder, exist_ok=True)
+    output_folder = os.path.join(r"./results/CNN", timestamp)
+    os.makedirs(output_folder, exist_ok=True) # Create a unique folder for each run
     
     # Save training parameters to a file
     param_file = os.path.join(output_folder, 'parameters.txt')
@@ -596,11 +493,11 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
         f.write(f"Num Epochs: {num_epochs}\n")
         f.write(f"Pixel Size: {pixel_size}\n")
         f.write(f"Device: {device}\n")
-        f.write(f"Loss Function: {loss_fn}\n")
+        f.write(f"Loss Function: Mean Squared Error Loss\n")
         f.write(f"Reduce Data: {reduce_data}\n")
 
     # Plot training progress
-    plot_training(train_losses, val_losses, train_ious, val_ious, output_folder)
+    plot_training(training_losses, validation_losses, training_ious, validation_ious, output_folder)
 
     # Generate predictions
     generate_predictions(model, test_dataset, device=device, output_folder=output_folder)
@@ -610,9 +507,7 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, device='cpu',
     torch.save(model.state_dict(), model_path)
 
     # Evaluate IoU
-    avg_iou = evaluate_iou(model, test_loader, device=device)
-    print(f"Average Validation IoU: {avg_iou:.4f}")
     print("Training completed!")
 
 if __name__ == "__main__":
-   main(lr=1e-4, batch_size=16, num_epochs=50, pixel_size=512, device='cuda', loss_fn='weighted_smooth_l1', reduce_data=True)
+   main(lr=1e-3, batch_size=64, num_epochs=100, pixel_size=512, device='cuda', reduce_data=False)
