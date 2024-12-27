@@ -1,0 +1,4 @@
+2024-12-27 03:11:31,988 - INFO - Using device: cpu
+2024-12-27 03:14:02,980 - INFO - Epoch 1: Train Loss: 0.0703, Train IoU: 0.0150
+2024-12-27 03:14:02,981 - INFO - Epoch 1: Validation Loss: 0.0601, Validation IoU: 0.0148
+2024-12-27 03:16:36,022 - INFO - Training completed successfully

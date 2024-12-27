@@ -17,7 +17,7 @@ from tqdm import tqdm
 #  Logging Configuration
 # ---------------------------------------------------------------------
 logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG for step-by-step tracing
+    level=logging.INFO,  # Set to DEBUG for step-by-step tracing
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),  # Log to console
@@ -439,6 +439,48 @@ class CNN(nn.Module):
 
     def forward(self, x):
         return torch.sigmoid(self.backbone(x))
+    
+    def ciou_loss(self, pred, target):
+        """
+        Compute the Complete Intersection over Union (CIoU) loss between predicted and target bounding boxes.
+
+        Args:
+            pred (torch.Tensor): Predicted bounding boxes of shape (N, 4), where N is the number of boxes.
+                                 Each box is represented by [x1, y1, x2, y2].
+            target (torch.Tensor): Target bounding boxes of shape (N, 4), where N is the number of boxes.
+                                   Each box is represented by [x1, y1, x2, y2].
+
+        Returns:
+            torch.Tensor: The CIoU loss value.
+        """
+        iou_matrix = ops.box_iou(pred, target)
+        iou = iou_matrix.diagonal()
+
+        # Center distance
+        pred_center = (pred[:, :2] + pred[:, 2:]) / 2
+        target_center = (target[:, :2] + target[:, 2:]) / 2
+        center_distance = torch.sum((pred_center - target_center) ** 2, dim=1)
+
+        # Diagonal length of enclosing box
+        enclosing_min = torch.min(pred[:, :2], target[:, :2])
+        enclosing_max = torch.max(pred[:, 2:], target[:, 2:])
+        diagonal_length = torch.sum((enclosing_max - enclosing_min) ** 2, dim=1)
+
+        # Aspect ratio consistency
+        pred_wh = pred[:, 2:] - pred[:, :2]
+        target_wh = target[:, 2:] - target[:, :2]
+        v = (4 / (3.14159 ** 2)) * torch.pow(torch.atan(pred_wh[:, 0] / pred_wh[:, 1]) -
+                                              torch.atan(target_wh[:, 0] / target_wh[:, 1]), 2)
+        alpha = v / (1 - iou + v + 1e-7)
+
+        ciou = iou - center_distance / diagonal_length - alpha * v
+        return 1 - ciou.mean()
+
+    def combined_loss(self, pred, target, alpha=0.5, beta=0.5):
+        Smooth_L1_loss = nn.SmoothL1Loss(pred, target)
+        IoU_Loss = iou_func(pred, target)
+        combined_loss = alpha * (Smooth_L1_loss) + beta * (IoU_Loss)
+        return combined_loss
 
 # ---------------------------------------------------------------------
 #  Model Training and Validation
@@ -662,7 +704,7 @@ def plot_training(train_losses, val_losses, train_ious, val_ious, output_folder)
 # ---------------------------------------------------------------------
 #  Main Function
 # ---------------------------------------------------------------------
-def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=False):
+def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=False, patience=5):
     """
     Main function to train and validate a Convolutional Neural Network (CNN) model.
     Args:
@@ -671,6 +713,7 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
         num_epochs (int): Number of epochs for training. Default is 3.
         pixel_size (int): Size of the image pixels. Default is 512.
         reduce_data (bool): Flag to reduce the dataset size for faster training. Default is False.
+        patience (int): Number of epochs to wait before early stopping. Default is 5.
     Returns:
         None
     """
@@ -713,8 +756,9 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
 
     model = CNN()
     model.to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-    criterion = nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    criterion = model.ciou_loss
 
     # Training Loop
     logging.debug("Starting training loop")
@@ -723,10 +767,32 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
     validation_losses = []
     validation_ious = []
 
+    # Early Stopping Variables
+    best_val_loss = float('inf')
+    patience_counter = 0
+    
     for epoch in range(num_epochs):
         logging.debug(f"Starting epoch {epoch + 1}/{num_epochs}")
         train_loss, train_iou, _ = train_model(model, train_loader, optimizer, criterion, num_epochs, device, epoch)
         val_loss, val_iou, _ = validate_model(model, test_loader, criterion, num_epochs, device, epoch)
+        
+        # Save the best model based on validation loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            model_path = os.path.join(output_folder, 'cnn_model.pth')
+            torch.save(model.state_dict(), model_path)
+            logging.info(f"New best model saved at epoch {epoch + 1}")
+        else:
+            patience_counter += 1
+            logging.info(f"Patience counter: {patience_counter}/{patience}")
+
+        # Early stopping check
+        if patience_counter >= patience:
+            logging.info("Early stopping triggered.")
+            break
+
+        scheduler.step()  # Adjust learning rate
 
         logging.info(f"Epoch {epoch + 1}: Train Loss: {train_loss:.4f}, Train IoU: {train_iou:.4f}")
         logging.info(f"Epoch {epoch + 1}: Validation Loss: {val_loss:.4f}, Validation IoU: {val_iou:.4f}")
@@ -754,14 +820,12 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
 
     plot_training(training_losses, validation_losses, training_ious, validation_ious, output_folder)
     generate_predictions(model, test_dataset, device=device, output_folder=output_folder)
-    model_path = os.path.join(output_folder, 'cnn_model.pth')
-    torch.save(model.state_dict(), model_path)
 
     logging.info("Training completed successfully")
 
 if __name__ == "__main__":
     # Debug Setup
-    main(lr=1e-3, batch_size=4, num_epochs=1, pixel_size=256, reduce_data=True)
+    # main(lr=1e-3, batch_size=4, num_epochs=1, pixel_size=256, reduce_data=True)
     
     # Production Setup
-    # main(lr=1e-3, batch_size=16, num_epochs=10, pixel_size=512, reduce_data=False)
+    main(lr=1e-3, batch_size=16, num_epochs=100, pixel_size=512, reduce_data=False)

@@ -1,0 +1,22 @@
+2024-12-27 03:18:43,909 - INFO - Using device: cpu
+2024-12-27 03:22:24,248 - INFO - Epoch 1: Train Loss: 0.0795, Train IoU: 0.0149
+2024-12-27 03:22:24,250 - INFO - Epoch 1: Validation Loss: 0.0670, Validation IoU: 0.0076
+2024-12-27 03:25:56,288 - INFO - Epoch 2: Train Loss: 0.0610, Train IoU: 0.0126
+2024-12-27 03:25:56,289 - INFO - Epoch 2: Validation Loss: 0.0617, Validation IoU: 0.0058
+2024-12-27 03:29:45,224 - INFO - Epoch 3: Train Loss: 0.0572, Train IoU: 0.0104
+2024-12-27 03:29:45,225 - INFO - Epoch 3: Validation Loss: 0.0599, Validation IoU: 0.0051
+2024-12-27 03:33:28,239 - INFO - Epoch 4: Train Loss: 0.0558, Train IoU: 0.0082
+2024-12-27 03:33:28,241 - INFO - Epoch 4: Validation Loss: 0.0595, Validation IoU: 0.0048
+2024-12-27 03:37:20,123 - INFO - Epoch 5: Train Loss: 0.0558, Train IoU: 0.0082
+2024-12-27 03:37:20,124 - INFO - Epoch 5: Validation Loss: 0.0590, Validation IoU: 0.0046
+2024-12-27 03:41:36,489 - INFO - Epoch 6: Train Loss: 0.0550, Train IoU: 0.0072
+2024-12-27 03:41:36,490 - INFO - Epoch 6: Validation Loss: 0.0591, Validation IoU: 0.0037
+2024-12-27 03:45:46,500 - INFO - Epoch 7: Train Loss: 0.0548, Train IoU: 0.0070
+2024-12-27 03:45:46,503 - INFO - Epoch 7: Validation Loss: 0.0589, Validation IoU: 0.0042
+2024-12-27 03:49:53,527 - INFO - Epoch 8: Train Loss: 0.0541, Train IoU: 0.0064
+2024-12-27 03:49:53,531 - INFO - Epoch 8: Validation Loss: 0.0586, Validation IoU: 0.0039
+2024-12-27 03:53:47,578 - INFO - Epoch 9: Train Loss: 0.0540, Train IoU: 0.0065
+2024-12-27 03:53:47,580 - INFO - Epoch 9: Validation Loss: 0.0585, Validation IoU: 0.0038
+2024-12-27 03:57:57,057 - INFO - Epoch 10: Train Loss: 0.0536, Train IoU: 0.0063
+2024-12-27 03:57:57,059 - INFO - Epoch 10: Validation Loss: 0.0582, Validation IoU: 0.0033
+2024-12-27 03:58:28,163 - INFO - Training completed successfully

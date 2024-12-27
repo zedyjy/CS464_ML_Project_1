@@ -1,0 +1,7 @@
+Learning Rate: 0.001
+Batch Size: 4
+Num Epochs: 1
+Pixel Size: 256
+Device: cpu
+Loss Function: Mean Squared Error Loss
+Reduce Data: True
