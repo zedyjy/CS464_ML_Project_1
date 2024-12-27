@@ -1,0 +1,40 @@
+2024-12-27 04:49:49,276 - INFO - Using device: cuda
+2024-12-27 04:50:22,276 - INFO - New best model saved at epoch 1
+2024-12-27 04:50:22,276 - INFO - Epoch 1: Train Loss: 1.2960, Train IoU: 0.0115
+2024-12-27 04:50:22,276 - INFO - Epoch 1: Validation Loss: 1.2671, Validation IoU: 0.0102
+2024-12-27 04:50:55,046 - INFO - New best model saved at epoch 2
+2024-12-27 04:50:55,057 - INFO - Epoch 2: Train Loss: 1.1928, Train IoU: 0.0103
+2024-12-27 04:50:55,057 - INFO - Epoch 2: Validation Loss: 1.2537, Validation IoU: 0.0104
+2024-12-27 04:51:27,423 - INFO - New best model saved at epoch 3
+2024-12-27 04:51:27,423 - INFO - Epoch 3: Train Loss: 1.1500, Train IoU: 0.0110
+2024-12-27 04:51:27,423 - INFO - Epoch 3: Validation Loss: 1.2312, Validation IoU: 0.0130
+2024-12-27 04:51:59,806 - INFO - New best model saved at epoch 4
+2024-12-27 04:51:59,806 - INFO - Epoch 4: Train Loss: 1.1125, Train IoU: 0.0106
+2024-12-27 04:51:59,806 - INFO - Epoch 4: Validation Loss: 1.2159, Validation IoU: 0.0145
+2024-12-27 04:52:33,188 - INFO - New best model saved at epoch 5
+2024-12-27 04:52:33,188 - INFO - Epoch 5: Train Loss: 1.0881, Train IoU: 0.0120
+2024-12-27 04:52:33,188 - INFO - Epoch 5: Validation Loss: 1.2069, Validation IoU: 0.0143
+2024-12-27 04:53:06,120 - INFO - New best model saved at epoch 6
+2024-12-27 04:53:06,120 - INFO - Epoch 6: Train Loss: 1.0760, Train IoU: 0.0111
+2024-12-27 04:53:06,120 - INFO - Epoch 6: Validation Loss: 1.1909, Validation IoU: 0.0165
+2024-12-27 04:53:38,287 - INFO - New best model saved at epoch 7
+2024-12-27 04:53:38,287 - INFO - Epoch 7: Train Loss: 1.0681, Train IoU: 0.0117
+2024-12-27 04:53:38,287 - INFO - Epoch 7: Validation Loss: 1.1899, Validation IoU: 0.0155
+2024-12-27 04:54:11,118 - INFO - New best model saved at epoch 8
+2024-12-27 04:54:11,118 - INFO - Epoch 8: Train Loss: 1.0674, Train IoU: 0.0118
+2024-12-27 04:54:11,118 - INFO - Epoch 8: Validation Loss: 1.1870, Validation IoU: 0.0158
+2024-12-27 04:54:43,393 - INFO - Patience counter: 1/5
+2024-12-27 04:54:43,393 - INFO - Epoch 9: Train Loss: 1.0659, Train IoU: 0.0122
+2024-12-27 04:54:43,393 - INFO - Epoch 9: Validation Loss: 1.1878, Validation IoU: 0.0170
+2024-12-27 04:55:17,021 - INFO - Patience counter: 2/5
+2024-12-27 04:55:17,021 - INFO - Epoch 10: Train Loss: 1.0605, Train IoU: 0.0127
+2024-12-27 04:55:17,023 - INFO - Epoch 10: Validation Loss: 1.1954, Validation IoU: 0.0161
+2024-12-27 04:55:49,381 - INFO - Patience counter: 3/5
+2024-12-27 04:55:49,381 - INFO - Epoch 11: Train Loss: 1.0598, Train IoU: 0.0124
+2024-12-27 04:55:49,381 - INFO - Epoch 11: Validation Loss: 1.1920, Validation IoU: 0.0168
+2024-12-27 04:56:21,496 - INFO - Patience counter: 4/5
+2024-12-27 04:56:21,496 - INFO - Epoch 12: Train Loss: 1.0582, Train IoU: 0.0131
+2024-12-27 04:56:21,496 - INFO - Epoch 12: Validation Loss: 1.1939, Validation IoU: 0.0164
+2024-12-27 04:56:54,056 - INFO - Patience counter: 5/5
+2024-12-27 04:56:54,056 - INFO - Early stopping triggered.
+2024-12-27 04:57:17,870 - INFO - Training completed successfully

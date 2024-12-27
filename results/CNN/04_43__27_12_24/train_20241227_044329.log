@@ -1,0 +1,19 @@
+2024-12-27 04:43:29,024 - INFO - Using device: cuda
+2024-12-27 04:44:01,919 - INFO - New best model saved at epoch 1
+2024-12-27 04:44:01,919 - INFO - Epoch 1: Train Loss: 1.4829, Train IoU: 0.0106
+2024-12-27 04:44:01,919 - INFO - Epoch 1: Validation Loss: 1.3722, Validation IoU: 0.0085
+2024-12-27 04:44:34,518 - INFO - Patience counter: 1/5
+2024-12-27 04:44:34,518 - INFO - Epoch 2: Train Loss: 1.4168, Train IoU: 0.0078
+2024-12-27 04:44:34,518 - INFO - Epoch 2: Validation Loss: 1.4074, Validation IoU: 0.0108
+2024-12-27 04:45:07,602 - INFO - Patience counter: 2/5
+2024-12-27 04:45:07,603 - INFO - Epoch 3: Train Loss: 1.4120, Train IoU: 0.0082
+2024-12-27 04:45:07,603 - INFO - Epoch 3: Validation Loss: 1.4136, Validation IoU: 0.0084
+2024-12-27 04:45:40,077 - INFO - Patience counter: 3/5
+2024-12-27 04:45:40,077 - INFO - Epoch 4: Train Loss: 1.3951, Train IoU: 0.0078
+2024-12-27 04:45:40,077 - INFO - Epoch 4: Validation Loss: 1.4003, Validation IoU: 0.0043
+2024-12-27 04:46:12,457 - INFO - Patience counter: 4/5
+2024-12-27 04:46:12,457 - INFO - Epoch 5: Train Loss: 1.3953, Train IoU: 0.0054
+2024-12-27 04:46:12,457 - INFO - Epoch 5: Validation Loss: 1.3937, Validation IoU: 0.0062
+2024-12-27 04:46:45,106 - INFO - Patience counter: 5/5
+2024-12-27 04:46:45,106 - INFO - Early stopping triggered.
+2024-12-27 04:47:22,864 - INFO - Training completed successfully

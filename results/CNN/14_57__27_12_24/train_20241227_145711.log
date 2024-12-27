@@ -1,0 +1,79 @@
+2024-12-27 14:57:12,061 - INFO - Using device: cuda
+2024-12-27 15:03:48,388 - INFO - New best model saved at epoch 1
+2024-12-27 15:03:48,388 - INFO - Epoch 1: Train Loss: 1.4306, Train IoU: 0.0022
+2024-12-27 15:03:48,388 - INFO - Epoch 1: Validation Loss: 1.4255, Validation IoU: 0.0003
+2024-12-27 15:10:05,705 - INFO - Patience counter: 1/5
+2024-12-27 15:10:05,705 - INFO - Epoch 2: Train Loss: 1.4032, Train IoU: 0.0003
+2024-12-27 15:10:05,707 - INFO - Epoch 2: Validation Loss: 1.6120, Validation IoU: 0.0002
+2024-12-27 15:14:44,087 - INFO - New best model saved at epoch 3
+2024-12-27 15:14:44,087 - INFO - Epoch 3: Train Loss: 1.4066, Train IoU: 0.0002
+2024-12-27 15:14:44,087 - INFO - Epoch 3: Validation Loss: 1.3956, Validation IoU: 0.0002
+2024-12-27 15:19:14,644 - INFO - New best model saved at epoch 4
+2024-12-27 15:19:14,645 - INFO - Epoch 4: Train Loss: 1.4018, Train IoU: 0.0002
+2024-12-27 15:19:14,645 - INFO - Epoch 4: Validation Loss: 1.3912, Validation IoU: 0.0002
+2024-12-27 15:23:41,786 - INFO - New best model saved at epoch 5
+2024-12-27 15:23:41,786 - INFO - Epoch 5: Train Loss: 1.3952, Train IoU: 0.0001
+2024-12-27 15:23:41,787 - INFO - Epoch 5: Validation Loss: 1.3819, Validation IoU: 0.0001
+2024-12-27 15:28:08,906 - INFO - Patience counter: 1/5
+2024-12-27 15:28:08,907 - INFO - Epoch 6: Train Loss: 1.3866, Train IoU: 0.0001
+2024-12-27 15:28:08,908 - INFO - Epoch 6: Validation Loss: 1.3832, Validation IoU: 0.0001
+2024-12-27 15:32:35,603 - INFO - New best model saved at epoch 7
+2024-12-27 15:32:35,603 - INFO - Epoch 7: Train Loss: 1.3839, Train IoU: 0.0001
+2024-12-27 15:32:35,604 - INFO - Epoch 7: Validation Loss: 1.3771, Validation IoU: 0.0001
+2024-12-27 15:37:02,524 - INFO - New best model saved at epoch 8
+2024-12-27 15:37:02,524 - INFO - Epoch 8: Train Loss: 1.3788, Train IoU: 0.0001
+2024-12-27 15:37:02,525 - INFO - Epoch 8: Validation Loss: 1.3752, Validation IoU: 0.0001
+2024-12-27 15:41:29,448 - INFO - New best model saved at epoch 9
+2024-12-27 15:41:29,449 - INFO - Epoch 9: Train Loss: 1.3693, Train IoU: 0.0001
+2024-12-27 15:41:29,449 - INFO - Epoch 9: Validation Loss: 1.3642, Validation IoU: 0.0001
+2024-12-27 15:45:56,488 - INFO - New best model saved at epoch 10
+2024-12-27 15:45:56,488 - INFO - Epoch 10: Train Loss: 1.3629, Train IoU: 0.0001
+2024-12-27 15:45:56,489 - INFO - Epoch 10: Validation Loss: 1.3629, Validation IoU: 0.0000
+2024-12-27 15:50:21,560 - INFO - New best model saved at epoch 11
+2024-12-27 15:50:21,560 - INFO - Epoch 11: Train Loss: 1.3577, Train IoU: 0.0001
+2024-12-27 15:50:21,560 - INFO - Epoch 11: Validation Loss: 1.3585, Validation IoU: 0.0000
+2024-12-27 15:54:46,593 - INFO - New best model saved at epoch 12
+2024-12-27 15:54:46,593 - INFO - Epoch 12: Train Loss: 1.3492, Train IoU: 0.0000
+2024-12-27 15:54:46,593 - INFO - Epoch 12: Validation Loss: 1.3523, Validation IoU: 0.0000
+2024-12-27 15:59:11,272 - INFO - New best model saved at epoch 13
+2024-12-27 15:59:11,272 - INFO - Epoch 13: Train Loss: 1.3431, Train IoU: 0.0000
+2024-12-27 15:59:11,273 - INFO - Epoch 13: Validation Loss: 1.3518, Validation IoU: 0.0000
+2024-12-27 16:03:36,694 - INFO - New best model saved at epoch 14
+2024-12-27 16:03:36,694 - INFO - Epoch 14: Train Loss: 1.3400, Train IoU: 0.0000
+2024-12-27 16:03:36,694 - INFO - Epoch 14: Validation Loss: 1.3513, Validation IoU: 0.0000
+2024-12-27 16:08:04,077 - INFO - New best model saved at epoch 15
+2024-12-27 16:08:04,077 - INFO - Epoch 15: Train Loss: 1.3312, Train IoU: 0.0000
+2024-12-27 16:08:04,077 - INFO - Epoch 15: Validation Loss: 1.3462, Validation IoU: 0.0000
+2024-12-27 16:12:31,863 - INFO - New best model saved at epoch 16
+2024-12-27 16:12:31,863 - INFO - Epoch 16: Train Loss: 1.3279, Train IoU: 0.0000
+2024-12-27 16:12:31,863 - INFO - Epoch 16: Validation Loss: 1.3460, Validation IoU: 0.0000
+2024-12-27 16:16:59,349 - INFO - New best model saved at epoch 17
+2024-12-27 16:16:59,349 - INFO - Epoch 17: Train Loss: 1.3246, Train IoU: 0.0000
+2024-12-27 16:16:59,349 - INFO - Epoch 17: Validation Loss: 1.3436, Validation IoU: 0.0000
+2024-12-27 16:21:27,143 - INFO - Patience counter: 1/5
+2024-12-27 16:21:27,143 - INFO - Epoch 18: Train Loss: 1.3182, Train IoU: 0.0000
+2024-12-27 16:21:27,143 - INFO - Epoch 18: Validation Loss: 1.3465, Validation IoU: 0.0000
+2024-12-27 16:25:55,295 - INFO - New best model saved at epoch 19
+2024-12-27 16:25:55,295 - INFO - Epoch 19: Train Loss: 1.3145, Train IoU: 0.0000
+2024-12-27 16:25:55,295 - INFO - Epoch 19: Validation Loss: 1.3433, Validation IoU: 0.0000
+2024-12-27 16:30:22,537 - INFO - Patience counter: 1/5
+2024-12-27 16:30:22,537 - INFO - Epoch 20: Train Loss: 1.3127, Train IoU: 0.0000
+2024-12-27 16:30:22,537 - INFO - Epoch 20: Validation Loss: 1.3446, Validation IoU: 0.0000
+2024-12-27 16:34:50,517 - INFO - New best model saved at epoch 21
+2024-12-27 16:34:50,519 - INFO - Epoch 21: Train Loss: 1.3079, Train IoU: 0.0000
+2024-12-27 16:34:50,519 - INFO - Epoch 21: Validation Loss: 1.3401, Validation IoU: 0.0000
+2024-12-27 16:39:16,654 - INFO - Patience counter: 1/5
+2024-12-27 16:39:16,654 - INFO - Epoch 22: Train Loss: 1.3054, Train IoU: 0.0000
+2024-12-27 16:39:16,654 - INFO - Epoch 22: Validation Loss: 1.3458, Validation IoU: 0.0000
+2024-12-27 16:43:42,076 - INFO - Patience counter: 2/5
+2024-12-27 16:43:42,076 - INFO - Epoch 23: Train Loss: 1.3045, Train IoU: 0.0000
+2024-12-27 16:43:42,076 - INFO - Epoch 23: Validation Loss: 1.3412, Validation IoU: 0.0000
+2024-12-27 16:48:08,085 - INFO - Patience counter: 3/5
+2024-12-27 16:48:08,085 - INFO - Epoch 24: Train Loss: 1.3015, Train IoU: 0.0000
+2024-12-27 16:48:08,085 - INFO - Epoch 24: Validation Loss: 1.3437, Validation IoU: 0.0000
+2024-12-27 16:52:36,053 - INFO - Patience counter: 4/5
+2024-12-27 16:52:36,069 - INFO - Epoch 25: Train Loss: 1.3012, Train IoU: 0.0000
+2024-12-27 16:52:36,069 - INFO - Epoch 25: Validation Loss: 1.3467, Validation IoU: 0.0000
+2024-12-27 16:58:59,501 - INFO - Patience counter: 5/5
+2024-12-27 16:58:59,501 - INFO - Early stopping triggered.
+2024-12-27 17:15:38,352 - INFO - Training completed successfully

@@ -1,0 +1,7 @@
+Learning Rate: 0.001
+Batch Size: 16
+Num Epochs: 100
+Pixel Size: 512
+Device: cuda
+Loss Function: Mean Squared Error Loss
+Reduce Data: False

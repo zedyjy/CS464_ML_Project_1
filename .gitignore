@@ -6,4 +6,4 @@ myenv/
 data/processed/
 
 # Ignore raw data directory (original or preprocessed test data)
-data/raw/
+data/

@@ -14,19 +14,6 @@ from datetime import datetime
 from tqdm import tqdm
 
 # ---------------------------------------------------------------------
-#  Logging Configuration
-# ---------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,  # Set to DEBUG for step-by-step tracing
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),  # Log to console
-        # Save logs to a file in the results folder
-        logging.FileHandler(os.path.join("logs", f"train_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"))
-    ]
-)
-
-# ---------------------------------------------------------------------
 #  Utility Functions
 # ---------------------------------------------------------------------
 def parse_geo_transform(aux_path):
@@ -419,20 +406,10 @@ class CNN(nn.Module):
         super(CNN, self).__init__()
         # Load a pretrained ResNet-18 model
         self.backbone = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-        # self.backbone.fc = nn.Linear(self.backbone.fc.in_features, 4)
-        
-        # Optionally freeze all layers
-        for param in self.backbone.parameters():
-            param.requires_grad = False
 
-         # Optionally unfreeze `layer4`
-        for child in self.backbone.layer4.named_children():
-            for param in child[1].parameters():
+        for name, param in self.backbone.named_parameters():
+            if "layer2" in name or "layer3" in name or "layer4" in name or "fc" in name:
                 param.requires_grad = True
-
-        # Optionally unfreeze the fully connected layer
-        for param in self.backbone.fc.parameters():
-            param.requires_grad = True
 
         # Replace the final fully connected layer to match `output_features`
         self.backbone.fc = nn.Linear(in_features=512, out_features=4, bias=True)
@@ -452,7 +429,10 @@ class CNN(nn.Module):
 
         Returns:
             torch.Tensor: The CIoU loss value.
+
         """
+        pred = torch.clamp(pred, 0, 1)
+        target = torch.clamp(target, 0, 1)
         iou_matrix = ops.box_iou(pred, target)
         iou = iou_matrix.diagonal()
 
@@ -476,9 +456,9 @@ class CNN(nn.Module):
         ciou = iou - center_distance / diagonal_length - alpha * v
         return 1 - ciou.mean()
 
-    def combined_loss(self, pred, target, alpha=0.5, beta=0.5):
-        Smooth_L1_loss = nn.SmoothL1Loss(pred, target)
-        IoU_Loss = iou_func(pred, target)
+    def combined_loss(self, pred, target, alpha=0.3, beta=0.7):
+        Smooth_L1_loss = nn.SmoothL1Loss()(pred, target)
+        IoU_Loss = self.ciou_loss(pred, target)
         combined_loss = alpha * (Smooth_L1_loss) + beta * (IoU_Loss)
         return combined_loss
 
@@ -570,6 +550,8 @@ def validate_model(model, val_loader, criterion, num_epochs, device, epoch):
             logging.debug(f"Batch {batch_idx + 1}: Data shapes - Images: {images.shape}, Targets: {targets.shape}")
             
             outputs = model(images)  # Bounding box predictions
+            outputs = torch.clamp(outputs, 0, 1)
+
             logging.debug(f"Batch {batch_idx + 1}: Output shape - {outputs.shape}")
             
             loss = criterion(outputs, targets)  # Compute loss
@@ -717,7 +699,37 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
     Returns:
         None
     """
-    logging.debug("Starting main function")
+
+    # Create output folder
+    timestamp = datetime.now().strftime("%H_%M__%d_%m_%y")
+    output_folder = os.path.join(r"./results/CNN", timestamp)
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Setup logging
+    logging.basicConfig(
+        level=logging.INFO,  # Set to DEBUG for step-by-step tracing
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),  # Log to console
+            # Save logs to a file in the results folder
+            logging.FileHandler(os.path.join(output_folder, f"train_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"))
+        ]
+    )  
+
+    # Setup device
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    logging.info(f"Using device: {device}")
+    
+    # Save parameters to a file
+    param_file = os.path.join(output_folder, 'parameters.txt')
+    with open(param_file, 'w') as f:
+        f.write(f"Learning Rate: {lr}\n")
+        f.write(f"Batch Size: {batch_size}\n")
+        f.write(f"Num Epochs: {num_epochs}\n")
+        f.write(f"Pixel Size: {pixel_size}\n")
+        f.write(f"Device: {device}\n")
+        f.write(f"Loss Function: Complete IoU + Smooth_L1 Combined Error Loss\n")
+        f.write(f"Reduce Data: {reduce_data}\n")
 
     # Data Processing
     logging.debug("Initializing data processing")
@@ -751,17 +763,13 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
 
     # Model Initialization
     logging.debug("Initializing model and optimizer")
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    logging.info(f"Using device: {device}")
-
     model = CNN()
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    criterion = model.ciou_loss
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    criterion = model.combined_loss
 
     # Training Loop
-    logging.debug("Starting training loop")
+    logging.debug("Starting CNN training")
     training_losses = []
     training_ious = []
     validation_losses = []
@@ -788,11 +796,9 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
             logging.info(f"Patience counter: {patience_counter}/{patience}")
 
         # Early stopping check
-        if patience_counter >= patience:
+        if patience_counter >= patience: 
             logging.info("Early stopping triggered.")
             break
-
-        scheduler.step()  # Adjust learning rate
 
         logging.info(f"Epoch {epoch + 1}: Train Loss: {train_loss:.4f}, Train IoU: {train_iou:.4f}")
         logging.info(f"Epoch {epoch + 1}: Validation Loss: {val_loss:.4f}, Validation IoU: {val_iou:.4f}")
@@ -804,20 +810,6 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
 
     # Results and Analysis
     logging.debug("Saving results and generating outputs")
-    timestamp = datetime.now().strftime("%H_%M__%d_%m_%y")
-    output_folder = os.path.join(r"./results/CNN", timestamp)
-    os.makedirs(output_folder, exist_ok=True)
-
-    param_file = os.path.join(output_folder, 'parameters.txt')
-    with open(param_file, 'w') as f:
-        f.write(f"Learning Rate: {lr}\n")
-        f.write(f"Batch Size: {batch_size}\n")
-        f.write(f"Num Epochs: {num_epochs}\n")
-        f.write(f"Pixel Size: {pixel_size}\n")
-        f.write(f"Device: {device}\n")
-        f.write(f"Loss Function: Mean Squared Error Loss\n")
-        f.write(f"Reduce Data: {reduce_data}\n")
-
     plot_training(training_losses, validation_losses, training_ious, validation_ious, output_folder)
     generate_predictions(model, test_dataset, device=device, output_folder=output_folder)
 
@@ -828,4 +820,4 @@ if __name__ == "__main__":
     # main(lr=1e-3, batch_size=4, num_epochs=1, pixel_size=256, reduce_data=True)
     
     # Production Setup
-    main(lr=1e-3, batch_size=16, num_epochs=100, pixel_size=512, reduce_data=False)
+    main(lr=1e-3, batch_size=32, num_epochs=100, pixel_size=512, reduce_data=False)
