@@ -1,0 +1,122 @@
+2024-12-27 19:05:59,523 - INFO - Using device: cuda
+2024-12-27 19:05:59,525 - DEBUG - Initializing data processing
+2024-12-27 19:05:59,525 - DEBUG - Loading datasets
+2024-12-27 19:05:59,602 - DEBUG - Initialized processData with 5815 images, 5815 GeoJSON files, and 5815 auxiliary files.
+2024-12-27 19:05:59,627 - DEBUG - Initialized processData with 2710 images, 2710 GeoJSON files, and 2710 auxiliary files.
+2024-12-27 19:05:59,638 - DEBUG - Reducing dataset size
+2024-12-27 19:05:59,638 - DEBUG - Dataset length: 5815
+2024-12-27 19:05:59,639 - DEBUG - Dataset length: 2710
+2024-12-27 19:05:59,640 - DEBUG - Dataset length: 5815
+2024-12-27 19:05:59,640 - DEBUG - Dataset length: 5815
+2024-12-27 19:05:59,640 - DEBUG - Dataset length: 2710
+2024-12-27 19:05:59,640 - DEBUG - Dataset length: 2710
+2024-12-27 19:05:59,643 - DEBUG - Initializing model and optimizer
+2024-12-27 19:05:59,706 - DEBUG - Starting CNN training
+2024-12-27 19:05:59,706 - DEBUG - Starting epoch 1/1
+2024-12-27 19:05:59,706 - DEBUG - Starting training for epoch 1/1
+2024-12-27 19:05:59,753 - DEBUG - Loaded backend tkagg version 8.6.
+2024-12-27 19:06:02,342 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:06:02,343 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:06:02,343 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:06:02,358 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:06:02,358 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:06:02,362 - DEBUG - Processed bounding box tensor: tensor([0.0000, 0.9414, 0.2344, 0.9980])
+2024-12-27 19:06:02,364 - DEBUG - Batch 1: Loading data
+2024-12-27 19:06:03,989 - DEBUG - Batch 1: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:06:04,071 - DEBUG - Batch 1: Input - tensor([[0.0000, 0.9414, 0.2344, 0.9980]], device='cuda:0')
+2024-12-27 19:06:06,622 - DEBUG - Batch 1: Output - tensor([[0.4994, 0.4915, 0.5007, 0.4971]], device='cuda:0',
+       grad_fn=<SigmoidBackward0>)
+2024-12-27 19:06:09,298 - DEBUG - Batch 1: Loss - 1.897686
+2024-12-27 19:06:14,288 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:06:14,294 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:06:14,294 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:06:14,304 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:06:14,305 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:06:14,306 - DEBUG - Processed bounding box tensor: tensor([0.0000, 0.8965, 0.0781, 0.9727])
+2024-12-27 19:06:14,307 - DEBUG - Batch 2: Loading data
+2024-12-27 19:06:16,945 - DEBUG - Batch 2: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:06:16,945 - DEBUG - Batch 2: Input - tensor([[0.0000, 0.8965, 0.0781, 0.9727]], device='cuda:0')
+2024-12-27 19:06:23,590 - DEBUG - Batch 2: Output - tensor([[0.0099, 0.9889, 0.9899, 0.0109]], device='cuda:0',
+       grad_fn=<SigmoidBackward0>)
+2024-12-27 19:06:30,007 - DEBUG - Batch 2: Loss - 1.920261
+2024-12-27 19:06:33,103 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:06:33,103 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:06:33,103 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:06:33,128 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:06:33,129 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:06:33,130 - DEBUG - Processed bounding box tensor: tensor([0.0234, 0.0000, 0.2129, 0.0859])
+2024-12-27 19:06:33,131 - DEBUG - Batch 3: Loading data
+2024-12-27 19:06:34,702 - DEBUG - Batch 3: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:06:34,705 - DEBUG - Batch 3: Input - tensor([[0.0234, 0.0000, 0.2129, 0.0859]], device='cuda:0')
+2024-12-27 19:06:36,156 - DEBUG - Batch 3: Output - tensor([[5.0114e-05, 9.9997e-01, 9.9995e-01, 3.0846e-05]], device='cuda:0',
+       grad_fn=<SigmoidBackward0>)
+2024-12-27 19:06:39,902 - DEBUG - Batch 3: Loss - 2.260683
+2024-12-27 19:06:43,436 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:06:43,436 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:06:43,436 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:06:43,453 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:06:43,453 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:06:43,457 - DEBUG - Processed bounding box tensor: tensor([0.8262, 0.2988, 0.9980, 0.4824])
+2024-12-27 19:06:43,457 - DEBUG - Batch 4: Loading data
+2024-12-27 19:06:44,238 - DEBUG - Batch 4: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:06:44,238 - DEBUG - Batch 4: Input - tensor([[0.8262, 0.2988, 0.9980, 0.4824]], device='cuda:0')
+2024-12-27 19:06:45,085 - DEBUG - Batch 4: Output - tensor([[1.0160e-05, 1.0000e+00, 9.9999e-01, 4.2481e-06]], device='cuda:0',
+       grad_fn=<SigmoidBackward0>)
+2024-12-27 19:06:45,752 - DEBUG - Batch 4: Loss - 1.644953
+2024-12-27 19:06:54,502 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:06:54,502 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:06:54,502 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:06:54,518 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:06:54,519 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:06:54,520 - DEBUG - Processed bounding box tensor: tensor([0.0234, 0.2031, 0.1328, 0.3027])
+2024-12-27 19:06:54,521 - DEBUG - Batch 5: Loading data
+2024-12-27 19:06:56,150 - DEBUG - Batch 5: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:06:56,153 - DEBUG - Batch 5: Input - tensor([[0.0234, 0.2031, 0.1328, 0.3027]], device='cuda:0')
+2024-12-27 19:06:57,472 - DEBUG - Batch 5: Output - tensor([[5.3286e-07, 1.0000e+00, 1.0000e+00, 1.1106e-07]], device='cuda:0',
+       grad_fn=<SigmoidBackward0>)
+2024-12-27 19:06:58,005 - DEBUG - Batch 5: Loss - 1.782370
+2024-12-27 19:07:00,689 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:07:00,689 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:07:00,689 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:07:00,704 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:07:00,705 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:07:00,706 - DEBUG - Processed bounding box tensor: tensor([0.7578, 0.1250, 0.9863, 0.2930])
+2024-12-27 19:07:00,706 - DEBUG - Batch 6: Loading data
+2024-12-27 19:07:01,454 - DEBUG - Batch 6: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:07:01,454 - DEBUG - Batch 6: Input - tensor([[0.7578, 0.1250, 0.9863, 0.2930]], device='cuda:0')
+2024-12-27 19:07:02,129 - DEBUG - Batch 6: Output - tensor([[3.1701e-08, 1.0000e+00, 1.0000e+00, 3.3440e-09]], device='cuda:0',
+       grad_fn=<SigmoidBackward0>)
+2024-12-27 19:07:02,332 - DEBUG - Batch 6: Loss - 1.873338
+2024-12-27 19:07:05,029 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:07:05,029 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:07:05,034 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:07:05,042 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:07:05,043 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:07:05,044 - DEBUG - Processed bounding box tensor: tensor([0.2207, 0.9609, 0.2891, 0.9980])
+2024-12-27 19:07:05,044 - DEBUG - Batch 7: Loading data
+2024-12-27 19:07:05,280 - DEBUG - Batch 7: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:07:05,280 - DEBUG - Batch 7: Input - tensor([[0.2207, 0.9609, 0.2891, 0.9980]], device='cuda:0')
+2024-12-27 19:07:05,785 - DEBUG - Batch 7: Output - tensor([[1.3851e-14, 1.0000e+00, 1.0000e+00, 7.7230e-17]], device='cuda:0',
+       grad_fn=<SigmoidBackward0>)
+2024-12-27 19:07:06,085 - DEBUG - Batch 7: Loss - 2.106590
+2024-12-27 19:07:07,606 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:07:07,606 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:07:07,606 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:07:07,621 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:07:07,622 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:07:07,623 - DEBUG - Processed bounding box tensor: tensor([0.0000, 0.0488, 0.1738, 0.2422])
+2024-12-27 19:07:07,624 - DEBUG - Batch 8: Loading data
+2024-12-27 19:07:07,833 - DEBUG - Batch 8: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:07:07,837 - DEBUG - Batch 8: Input - tensor([[0.0000, 0.0488, 0.1738, 0.2422]], device='cuda:0')
+2024-12-27 19:07:08,301 - DEBUG - Batch 8: Output - tensor([[8.0319e-12, 1.0000e+00, 1.0000e+00, 1.1938e-13]], device='cuda:0',
+       grad_fn=<SigmoidBackward0>)
+2024-12-27 19:07:08,585 - DEBUG - Batch 8: Loss - 1.736311
+2024-12-27 19:07:10,003 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 19:07:10,003 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 19:07:10,003 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 19:07:10,016 - DEBUG - Processed image tensor shape: torch.Size([3, 256, 256])
+2024-12-27 19:07:10,016 - DEBUG - Processed bounding box shape: torch.Size([4])
+2024-12-27 19:07:10,017 - DEBUG - Processed bounding box tensor: tensor([0.0000, 0.4922, 0.0488, 0.5430])
+2024-12-27 19:07:10,018 - DEBUG - Batch 9: Loading data
+2024-12-27 19:07:10,181 - DEBUG - Batch 9: Data shapes - Images: torch.Size([1, 3, 256, 256]), Targets: torch.Size([1, 4])
+2024-12-27 19:07:10,185 - DEBUG - Batch 9: Input - tensor([[0.0000, 0.4922, 0.0488, 0.5430]], device='cuda:0')

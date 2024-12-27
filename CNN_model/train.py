@@ -6,303 +6,11 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
-from torchvision import models, ops, transforms
-from torchvision.models import ResNet18_Weights
+from torchvision import ops, transforms
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image, ImageDraw
 from datetime import datetime
 from tqdm import tqdm
-
-# ---------------------------------------------------------------------
-#  Utility Functions
-# ---------------------------------------------------------------------
-def parse_geo_transform(aux_path):
-    """
-    Parse the GeoTransform metadata from the .aux.xml file.
-        Args:
-            aux_path (str): The file path to the .aux.xml file containing the GeoTransform metadata.
-
-        Returns:
-            list of float: A list of six floating-point numbers representing the GeoTransform.
-
-        Raises:
-            FileNotFoundError: If the specified .aux.xml file does not exist.
-            ET.ParseError: If there is an error parsing the XML file.
-            AttributeError: If the GeoTransform element is not found in the XML file.
-    """
-    logging.debug(f"Parsing GeoTransform from: {aux_path}")
-    tree = ET.parse(aux_path)
-    root = tree.getroot()
-    geo_transform = root.find("GeoTransform").text.strip().split(",")
-    geo_transform = [float(value) for value in geo_transform]
-    logging.debug(f"GeoTransform parsed: {geo_transform}")
-    logging.debug( "-------------------------------------------------")
-    return geo_transform
-
-def read_geojson(geojson_path):
-    """
-    Read and parse a GeoJSON file to extract coordinates and features.
-    Parameters:
-    geojson_path (str): The file path to the GeoJSON file.
-    Returns:
-    tuple: A tuple containing:
-        - coords (list): A list of coordinates extracted from the first feature's geometry.
-        - features (list): A list of features extracted from the first feature's properties, including:
-            - length (float): Length property of the feature.
-            - wingspan (float): Wingspan property of the feature.
-            - area (float): Area property of the feature.
-            - wing_type_code (int): Encoded wing type (0: straight, 1: swept, 2: other).
-            - wing_position_code (int): Encoded wing position (0: high mounted, 1: low/mid mounted, 2: other).
-            - canard (int): Presence of canards (1: yes, 0: no).
-            - num_engines (int): Number of engines.
-            - num_tailfins (int): Number of tail fins.
-            - faa_class (int): FAA wingspan class.
-    Raises:
-    ValueError: If the coordinates in the GeoJSON are invalid.
-    """
-    logging.debug(f"Reading GeoJSON from: {geojson_path}")
-    with open(geojson_path, 'r') as f:
-        data = json.load(f)
-        
-    if not data['features']:
-        logging.warning("No features found in GeoJSON. Using dummy coordinates.")    
-        coords = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # Dummy coordinates
-        features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
-    else:
-        first_feature = data['features'][0]
-        coords = first_feature['geometry']['coordinates']
-        logging.debug(f"First feature coordinates: {coords}")
-        props = first_feature.get('properties', {})
-        logging.debug(f"Feature properties: {props}")
-        
-        # Ensure `coords` is a list of tuples/lists
-        if not isinstance(coords, list) or not all(isinstance(pt, (list, tuple)) and len(pt) == 2 for pt in coords[0]):
-            raise ValueError(f"Invalid GeoJSON coordinates: {coords}")
-        
-        coords = coords[0]  # Extract the first polygon
-        
-        xs = [pt[0] for pt in coords]
-        ys = [pt[1] for pt in coords]
-        
-        if not xs or not ys:
-            coords = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # Dummy coordinates
-            features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
-        else:
-            coords = list(zip(xs, ys))
-        
-        # Extract additional properties
-        props = first_feature.get('properties', {})
-        length = props.get('length', 0.0)
-        wingspan = props.get('wingspan', 0.0)
-        area = props.get('area', 0.0)
-
-        # Handle categorical features
-        wing_type_str = props.get('wing_type', 'other')
-        wing_position_str = props.get('wing_position', 'other')
-
-        wing_type_code = 0 if wing_type_str == 'straight' else (1 if wing_type_str == 'swept' else 2)
-        wing_position_code = 0 if wing_position_str == 'high mounted' else (1 if 'low' in wing_position_str or 'mid' in wing_position_str else 2)
-
-        canard = 1 if props.get('canards', 'yes') == 'yes' else 0
-        num_engines = props.get('num_engines', 0)
-        num_tailfins = props.get('num_tail_fins', 0)
-        faa_class = props.get('faa_wingspan_class', 0)
-
-        features = [length, wingspan, area, wing_type_code, wing_position_code, canard, num_engines, num_tailfins, faa_class]
-    
-    logging.debug(f"GeoJSON Coords: {coords}")
-    logging.debug(f"GeoJSON Features: {features}")
-    logging.debug( "-------------------------------------------------")
-    return coords, features
-
-def geo_to_pixel(lon, lat, geo_transform, image_width, image_height):
-    """
-    Convert geographic coordinates (longitude, latitude) to image pixel coordinates.
-    Parameters:
-        lon (float): Longitude of the geographic coordinate.
-        lat (float): Latitude of the geographic coordinate.
-        geo_transform (tuple): A tuple containing the affine transformation coefficients.
-        image_width (int): Width of the image in pixels.
-        image_height (int): Height of the image in pixels.
-    Returns:
-        tuple: A tuple containing the x and y pixel coordinates.
-    Notes:
-        The function clamps the pixel coordinates to ensure they fall within the image dimensions.
-    """
-    logging.debug(f"Converting geo-coordinates to pixel coordinates:")
-    logging.debug(f"Inputs - lon: {lon}, lat: {lat}, geo_transform: {geo_transform}, "
-                  f"image_width: {image_width}, image_height: {image_height}")
-
-    # Parse geotransformation coefficients
-    x_origin, pixel_width, _, y_origin, _, pixel_height = geo_transform
-    logging.debug(f"Parsed GeoTransform - x_origin: {x_origin}, pixel_width: {pixel_width}, "
-                  f"y_origin: {y_origin}, pixel_height: {pixel_height}")
-
-    # Compute pixel coordinates
-    x_pixel = int((lon - x_origin) / pixel_width)
-    y_pixel = int((y_origin - lat) / abs(pixel_height))
-    logging.debug(f"Computed pixel coordinates before clamping - x_pixel: {x_pixel}, y_pixel: {y_pixel}")
-
-    # Clamp pixel coordinates to image boundaries
-    x_pixel_clamped = max(0, min(x_pixel, image_width - 1))
-    y_pixel_clamped = max(0, min(y_pixel, image_height - 1))
-    logging.debug(f"Clamped pixel coordinates - x_pixel: {x_pixel_clamped}, y_pixel: {y_pixel_clamped}")
-    return x_pixel_clamped, y_pixel_clamped
-
-def geojson_to_pixel_bboxes(coords, geo_transform, image_width, image_height):
-    """
-    Convert GeoJSON bounding boxes to image pixel bounding boxes.    
-    Args:
-        coords (list of tuples): List of (longitude, latitude) tuples representing the GeoJSON coordinates.
-        geo_transform (tuple): Geotransformation parameters for converting geo-coordinates to pixel coordinates.
-        image_width (int): Width of the image in pixels.
-        image_height (int): Height of the image in pixels.
-    Returns:
-        tensor: A tensor of shape [4] containing (x_min, y_min, x_max, y_max) which are the pixel coordinates of the bounding box.
-    """
-    logging.debug("------------------- Converting GeoJSON to Pixel Bounding Box -------------------")
-    logging.debug(f"Input Coordinates: {coords}")
-    logging.debug(f"GeoTransform: {geo_transform}")
-    logging.debug(f"Image Dimensions: width={image_width}, height={image_height}")
-    
-    pixel_coords = [geo_to_pixel(lon, lat, geo_transform, image_width, image_height) for lon, lat in coords]
-    logging.debug(f"Pixel Coordinates: {pixel_coords}")
-
-    x_coords = [p[0] for p in pixel_coords]
-    y_coords = [p[1] for p in pixel_coords]
-    x_min, x_max = min(x_coords), max(x_coords)
-    y_min, y_max = min(y_coords), max(y_coords)
-    bboxes = torch.tensor([x_min, y_min, x_max, y_max], dtype=torch.float32)
-    logging.debug(f"Pixel Bounding Box Tensor: {bboxes}")
-    return bboxes
-
-def norm_bbox(bboxes, image_width, image_height):
-    """
-    Normalize bounding boxes to the range [0, 1].
-    
-    Args:
-        bboxes (tensor): Tensor of shape [N, 4] in corner format (x_min, y_min, x_max, y_max).
-        image_width (int): Width of the image.
-        image_height (int): Height of the image.
-        
-    Returns:
-        tensor: Tensor of shape [N, 4] with normalized bounding boxes.
-    """
-    logging.debug("-------------------------- Normalizing Bounding Boxes --------------------------")
-    logging.debug(f"Input Bounding Boxes: {bboxes}")
-
-    # Ensure bboxes has the correct shape
-    if bboxes.ndimension() == 1 and bboxes.size(0) == 4:
-        bboxes = bboxes.unsqueeze(0)
-    elif bboxes.ndimension() != 2 or bboxes.size(1) != 4:
-        raise ValueError(f"Expected bboxes to have shape [N, 4], but got {bboxes.shape}")
-
-    # Normalize bounding box coordinates
-    x_min, y_min, x_max, y_max = bboxes.split(1, dim=1) 
-    x_min = x_min / image_width
-    y_min = y_min / image_height
-    x_max = x_max / image_width
-    y_max = y_max / image_height
-
-    # Clamp to ensure values are in [0, 1]
-    x_min = torch.clamp(x_min, 0, 1)
-    y_min = torch.clamp(y_min, 0, 1)
-    x_max = torch.clamp(x_max, 0, 1)
-    y_max = torch.clamp(y_max, 0, 1)
-
-    # Combine back into tensor
-    result = torch.cat([x_min, y_min, x_max, y_max], dim=1)
-
-    logging.debug(f"Normalized Bounding Boxes: {result}")
-    return result
-
-def corner_to_center(bboxes):
-    """
-    Convert bounding boxes from corner format (x_min, y_min, x_max, y_max)
-    to center-size format (cx, cy, w, h).
-    Args:
-        bboxes (tensor or list): Tensor of shape [N, 4] or list of shape [N, 4].
-    Returns:
-        tensor: Tensor of shape [N, 4] in format (cx, cy, w, h).
-    """
-    logging.debug("--------------------- Converting Format of Bounding Boxes ----------------------")
-    logging.debug(f"Input Bounding Boxes (Corner Format): {bboxes}")
-
-    # Ensure bboxes has the correct shape
-    if bboxes.ndimension() == 1 and bboxes.size(0) == 4:
-        bboxes = bboxes.unsqueeze(0)  # Add batch dimension
-    elif bboxes.ndimension() != 2 or bboxes.size(1) != 4:
-        raise ValueError(f"Expected bboxes to have shape [N, 4], but got {bboxes.shape}")
-    
-    # Calculate center coordinates and dimensions
-    x_min, y_min, x_max, y_max = bboxes.split(1, dim=1)
-    cx = (x_min + x_max) / 2.0
-    cy = (y_min + y_max) / 2.0
-    w = x_max - x_min
-    h = y_max - y_min
-
-    # Concatenate results into a single tensor
-    result = torch.cat([cx, cy, w, h], dim=1)
-    logging.debug(f"Converted Bounding Boxes (Center Format): {result}")
-    return result
-
-def center_to_corner(bboxes):
-    """
-    Convert bounding boxes from center-size format (cx, cy, w, h)
-    to corner format (x_min, y_min, x_max, y_max).
-    Args:
-        bboxes (tensor or list): Tensor of shape [N, 4] or list of shape [N, 4].
-    Returns:
-        tensor: Tensor of shape [N, 4] in format (x_min, y_min, x_max, y_max).
-    """
-    logging.debug("--------------------- Converting Format of Bounding Boxes ----------------------")   
-    logging.debug(f"Input Bounding Boxes (Center Format): {bboxes}")
-
-    # Split into cx, cy, w, h
-    cx, cy, w, h = bboxes.split(1, dim=1)
-    logging.debug(f"cx: {cx.squeeze().tolist()}, cy: {cy.squeeze().tolist()}, "
-                  f"w: {w.squeeze().tolist()}, h: {h.squeeze().tolist()}")
-
-    # Calculate corner coordinates
-    x_min = cx - w / 2.0
-    x_max = cx + w / 2.0
-    y_min = cy - h / 2.0
-    y_max = cy + h / 2.0
-    result = torch.cat([x_min, y_min, x_max, y_max], dim=1)
-
-    logging.debug(f"Converted Bounding Boxes (Corner Format): {result}")
-    return result
-
-def iou_func(bbox1, bbox2):
-    """
-    Compute the Intersection over Union (IoU) of two bounding boxes.
-    
-    Args:
-        bbox1 (tensor): Tensor of shape (N, 4) in center format (cx, cy, w, h).
-        bbox2 (tensor): Tensor of shape (N, 4) in center format (cx, cy, w, h).
-    
-    Returns:
-        float: The average IoU across all pairs of bounding boxes.
-    """
-    logging.debug("--------------------------------- IoU Function ---------------------------------")
-    logging.debug(f"Input bbox1 (Center Format): {bbox1}")
-    logging.debug(f"Input bbox2 (Center Format): {bbox2}")
-
-    # Convert bounding boxes from center format to corner format
-    bbox1_corner = center_to_corner(bbox1)
-    bbox2_corner = center_to_corner(bbox2)
-
-    logging.debug(f"Converted bbox1 (Corner Format): {bbox1_corner}")
-    logging.debug(f"Converted bbox2 (Corner Format): {bbox2_corner}")
-
-    # Calculate IoU
-    iou_matrix = ops.box_iou(bbox1_corner, bbox2_corner)
-    logging.debug(f"IoU Matrix: {iou_matrix}")
-
-    # Compute average IoU
-    iou = iou_matrix.diagonal().mean().item()
-    logging.debug(f"Average IoU: {iou}")
-    return iou
 
 # ---------------------------------------------------------------------
 # Dataset Processing
@@ -337,7 +45,164 @@ class processData(Dataset):
         length = len(self.image_files)
         logging.debug(f"Dataset length: {length}")
         return length
+    
+    def parse_geo_transform(self, aux_path):
+        """
+        Parse the GeoTransform metadata from the .aux.xml file.
+        
+        Returns:
+            list of float: [x_origin, pixel_width, 0, y_origin, 0, pixel_height].
+        """
+        tree = ET.parse(aux_path)
+        root = tree.getroot()
+        geo_transform = root.find("GeoTransform").text.strip().split(",")
+        geo_transform = [float(value) for value in geo_transform]
+        return geo_transform
 
+
+    def read_geojson(self, geojson_path):
+        """
+        Read and parse a GeoJSON file to extract coordinates and features.
+        Parameters:
+        geojson_path (str): The file path to the GeoJSON file.
+        Returns:
+        tuple: A tuple containing:
+            - coords (list): A list of coordinates extracted from the first feature's geometry.
+            - features (list): A list of features extracted from the first feature's properties, including:
+                - length (float): Length property of the feature.
+                - wingspan (float): Wingspan property of the feature.
+                - area (float): Area property of the feature.
+                - wing_type_code (int): Encoded wing type (0: straight, 1: swept, 2: other).
+                - wing_position_code (int): Encoded wing position (0: high mounted, 1: low/mid mounted, 2: other).
+                - canard (int): Presence of canards (1: yes, 0: no).
+                - num_engines (int): Number of engines.
+                - num_tailfins (int): Number of tail fins.
+                - faa_class (int): FAA wingspan class.
+        Raises:
+        ValueError: If the coordinates in the GeoJSON are invalid.
+        """
+        with open(geojson_path, 'r') as f:
+            data = json.load(f)
+            
+        if not data['features']:
+            coords = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # Dummy coordinates
+            features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
+        else:
+            first_feature = data['features'][0]
+            coords = first_feature['geometry']['coordinates']
+            props = first_feature.get('properties', {})
+            
+            # Ensure `coords` is a list of tuples/lists
+            if not isinstance(coords, list) or not all(isinstance(pt, (list, tuple)) and len(pt) == 2 for pt in coords[0]):
+                raise ValueError(f"Invalid GeoJSON coordinates: {coords}")
+            
+            coords = coords[0]  # Extract the first polygon
+            
+            xs = [pt[0] for pt in coords]
+            ys = [pt[1] for pt in coords]
+            
+            if not xs or not ys:
+                coords = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # Dummy coordinates
+                features = [0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0]
+            else:
+                coords = list(zip(xs, ys))
+            
+            # Extract additional properties
+            props = first_feature.get('properties', {})
+            length = props.get('length', 0.0)
+            wingspan = props.get('wingspan', 0.0)
+            area = props.get('area', 0.0)
+
+            # Handle categorical features
+            wing_type_str = props.get('wing_type', 'other')
+            wing_position_str = props.get('wing_position', 'other')
+
+            wing_type_code = 0 if wing_type_str == 'straight' else (1 if wing_type_str == 'swept' else 2)
+            wing_position_code = 0 if wing_position_str == 'high mounted' else (1 if 'low' in wing_position_str or 'mid' in wing_position_str else 2)
+
+            canard = 1 if props.get('canards', 'yes') == 'yes' else 0
+            num_engines = props.get('num_engines', 0)
+            num_tailfins = props.get('num_tail_fins', 0)
+            faa_class = props.get('faa_wingspan_class', 0)
+
+            features = [length, wingspan, area, wing_type_code, wing_position_code, canard, num_engines, num_tailfins, faa_class]
+        return coords, features
+
+    def geo_to_pixel(self, lon, lat, geo_transform, image_width, image_height):
+        """
+        Convert geographic coordinates (longitude, latitude) to image pixel coordinates.
+        Parameters:
+            lon (float): Longitude of the geographic coordinate.
+            lat (float): Latitude of the geographic coordinate.
+            geo_transform (tuple): A tuple containing the affine transformation coefficients.
+            image_width (int): Width of the image in pixels.
+            image_height (int): Height of the image in pixels.
+        Returns:
+            tuple: A tuple containing the x and y pixel coordinates.
+        Notes:
+            The function clamps the pixel coordinates to ensure they fall within the image dimensions.
+        """
+        # Parse geotransformation coefficients
+        x_origin, pixel_width, _, y_origin, _, pixel_height = geo_transform
+        # Compute pixel coordinates
+        x_pixel = int((lon - x_origin) / pixel_width)
+        y_pixel = int((y_origin - lat) / abs(pixel_height))
+        # Clamp pixel coordinates to image boundaries
+        x_pixel_clamped = max(0, min(x_pixel, image_width - 1))
+        y_pixel_clamped = max(0, min(y_pixel, image_height - 1))
+        return x_pixel_clamped, y_pixel_clamped
+
+    def geojson_to_pixel_bboxes(self, coords, geo_transform, image_width, image_height):
+        """
+        Convert GeoJSON bounding boxes to image pixel bounding boxes.    
+        Args:
+            coords (list of tuples): List of (longitude, latitude) tuples representing the GeoJSON coordinates.
+            geo_transform (tuple): Geotransformation parameters for converting geo-coordinates to pixel coordinates.
+            image_width (int): Width of the image in pixels.
+            image_height (int): Height of the image in pixels.
+        Returns:
+            tensor: A tensor of shape [4] containing (x_min, y_min, x_max, y_max) which are the pixel coordinates of the bounding box.
+        """
+        pixel_coords = [self.geo_to_pixel(lon, lat, geo_transform, image_width, image_height) for lon, lat in coords]
+        x_coords = [p[0] for p in pixel_coords]
+        y_coords = [p[1] for p in pixel_coords]
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
+        bboxes = torch.tensor([x_min, y_min, x_max, y_max], dtype=torch.float32)
+        return bboxes
+
+    def norm_bbox(self, bboxes, image_width, image_height):
+        """
+        Normalize bounding boxes to the range [0, 1].
+        
+        Args:
+            bboxes (tensor): Tensor of shape [N, 4] in corner format (x_min, y_min, x_max, y_max).
+            image_width (int): Width of the image.
+            image_height (int): Height of the image.
+            
+        Returns:
+            tensor: Tensor of shape [N, 4] with normalized bounding boxes.
+        """
+        # Ensure bboxes has the correct shape
+        if bboxes.ndimension() == 1 and bboxes.size(0) == 4:
+            bboxes = bboxes.unsqueeze(0)
+        elif bboxes.ndimension() != 2 or bboxes.size(1) != 4:
+            raise ValueError(f"Expected bboxes to have shape [N, 4], but got {bboxes.shape}")
+
+        # Normalize bounding box coordinates
+        x_min, y_min, x_max, y_max = bboxes.split(1, dim=1) 
+        x_min = x_min / image_width
+        y_min = y_min / image_height
+        x_max = x_max / image_width
+        y_max = y_max / image_height
+
+        # Clamp to ensure values are in [0, 1]
+        x_min = torch.clamp(x_min, 0, 1)
+        y_min = torch.clamp(y_min, 0, 1)
+        x_max = torch.clamp(x_max, 0, 1)
+        y_max = torch.clamp(y_max, 0, 1)
+        return torch.tensor([x_min, y_min, x_max, y_max], dtype=torch.float32)
+    
     def __getitem__(self, idx):
         """
         Fetch the item at the given index.
@@ -352,37 +217,26 @@ class processData(Dataset):
         label_path = os.path.join(self.feature_folder, self.label_files[idx])
         aux_path = os.path.join(self.aux_folder, self.aux_files[idx])
 
-        # Log file paths
-        logging.debug(f"Processing index {idx}:")
-        logging.debug(f"Image path: {img_path}")
-        logging.debug(f"Label path: {label_path}")
-        logging.debug(f"Auxiliary path: {aux_path}")
-
         # Parse GeoTransform and GeoJSON
-        geo_transform = parse_geo_transform(aux_path)
-        coords, _ = read_geojson(label_path)
-        logging.debug(f"Parsed GeoTransform: {geo_transform}")
-        logging.debug(f"Parsed GeoJSON coordinates: {coords}")
+        geo_transform = self.parse_geo_transform(aux_path)
+        coords, _ = self.read_geojson(label_path)
 
         # Load and preprocess image
         image = Image.open(img_path).convert('RGB')
         width, height = image.size
-        logging.debug(f"Loaded image size: {width}x{height}")
 
         # Convert GeoJSON to pixel bounding box
-        pixel_bbox = geojson_to_pixel_bboxes(coords, geo_transform, width, height)
+        pixel_bbox = self.geojson_to_pixel_bboxes(coords, geo_transform, width, height)
 
         # Normalize the bounding box to [0,1]
-        normalized_bbox = norm_bbox(pixel_bbox, width, height)
-        
-        # Convert pixel bounding box to center format
-        centered_bbox = corner_to_center(normalized_bbox)
+        normalized_bbox = self.norm_bbox(pixel_bbox, width, height)
         
         # Apply transformations to the image
         processed_image = self.transform(image)
-        processed_bbox = centered_bbox.clone().detach()
+        processed_bbox = normalized_bbox.clone().detach()
         processed_bbox = processed_bbox.squeeze(0)  # Ensure target tensor has shape [4]
         logging.debug(f"Processed image tensor shape: {processed_image.shape}")
+        logging.debug(f"Processed bounding box shape: {processed_bbox.shape}")
         logging.debug(f"Processed bounding box tensor: {processed_bbox}")
         return processed_image, processed_bbox
     
@@ -390,33 +244,81 @@ class processData(Dataset):
 #  CNN Model
 # ---------------------------------------------------------------------
 class CNN(nn.Module):
-    """
-    A Convolutional Neural Network (CNN) model that uses a pretrained ResNet-18 backbone.
-    Attributes:
-        backbone (torchvision.models.ResNet): The ResNet-18 model used as the backbone of the CNN.
-    Methods:
-        __init__(): Initializes the CNN model, loads a pretrained ResNet-18 model, optionally freezes layers,
-                    and replaces the final fully connected layer to match the desired output features.
-        forward(x): Defines the forward pass of the model, applying the backbone and a sigmoid activation function.
-    Example:
-        model = CNN()
-        output = model(input_tensor)
-    """
-    def __init__(self):
+    def __init__(self, input_size):
+        """
+        Initializes the CNN model.
+        Args:
+            input_size (int): The size of the input image (assumed to be square).
+        Attributes:
+            conv1 (nn.Conv2d): First convolutional layer.
+            bn1 (nn.BatchNorm2d): Batch normalization for the first convolutional layer.
+            relu1 (nn.ReLU): ReLU activation for the first convolutional layer.
+            pool1 (nn.MaxPool2d): Max pooling layer after the first convolutional layer.
+            conv2 (nn.Conv2d): Second convolutional layer.
+            bn2 (nn.BatchNorm2d): Batch normalization for the second convolutional layer.
+            relu2 (nn.ReLU): ReLU activation for the second convolutional layer.
+            pool2 (nn.MaxPool2d): Max pooling layer after the second convolutional layer.
+            conv3 (nn.Conv2d): Third convolutional layer.
+            bn3 (nn.BatchNorm2d): Batch normalization for the third convolutional layer.
+            relu3 (nn.ReLU): ReLU activation for the third convolutional layer.
+            pool3 (nn.MaxPool2d): Max pooling layer after the third convolutional layer.
+            flat_dim (int): Flattened dimension of the feature map after the convolutional and pooling layers.
+            fc_final (nn.Linear): Fully connected layer for bounding box prediction.
+        """
         super(CNN, self).__init__()
-        # Load a pretrained ResNet-18 model
-        self.backbone = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-
-        for name, param in self.backbone.named_parameters():
-            if "layer2" in name or "layer3" in name or "layer4" in name or "fc" in name:
-                param.requires_grad = True
-
-        # Replace the final fully connected layer to match `output_features`
-        self.backbone.fc = nn.Linear(in_features=512, out_features=4, bias=True)
-
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.relu1 = nn.ReLU()
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.relu2 = nn.ReLU()
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.relu3 = nn.ReLU()
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        # Calculate flat_dim dynamically based on input_size and number of pooling layers
+        final_size = input_size // (2 ** 3)  # 3 pooling layers
+        self.flat_dim = final_size * final_size * 128
+        # Fully connected layer for bounding box prediction
+        self.fc_final = nn.Linear(self.flat_dim, 4)
     def forward(self, x):
-        return torch.sigmoid(self.backbone(x))
+        """
+        Perform a forward pass through the CNN model.
+
+        Args:
+            x (torch.Tensor): Input tensor representing a batch of images with shape (B, C, H, W),
+                              where B is the batch size, C is the number of channels, H is the height,
+                              and W is the width.
+
+        Returns:
+            torch.Tensor: Output tensor representing the predicted bounding boxes with shape (B, 4),
+                          where B is the batch size and 4 corresponds to the coordinates of the bounding box.
+        """
+        # CNN for image
+        x = self.pool1(self.relu1(self.conv1(x)))
+        x = self.pool2(self.relu2(self.conv2(x)))
+        x = self.pool3(self.relu3(self.conv3(x)))
+        x = x.view(x.size(0), -1)  # Flatten maintaining batch size
+        # Predict bounding box
+        out = self.fc_final(x)  # shape (B, 4)
+        out = torch.sigmoid(out)  # Apply sigmoid activation function to clamp output to [0, 1]
+        return out
     
+    def iou_func(bbox1, bbox2):
+        """
+        Compute IoU for two sets of bounding boxes in corner format [x_min, y_min, x_max, y_max].
+        bbox1, bbox2: shape (N, 4) each.
+        
+        Returns the mean diagonal IoU.
+        """
+        # box_iou expects corner format [x1, y1, x2, y2]
+        iou_matrix = ops.box_iou(bbox1, bbox2)  # shape (N, N)
+        # We compute the diagonal average for pairs
+        iou = iou_matrix.diagonal().mean().item()
+        return iou
+
     def ciou_loss(self, pred, target):
         """
         Compute the Complete Intersection over Union (CIoU) loss between predicted and target bounding boxes.
@@ -431,8 +333,6 @@ class CNN(nn.Module):
             torch.Tensor: The CIoU loss value.
 
         """
-        pred = torch.clamp(pred, 0, 1)
-        target = torch.clamp(target, 0, 1)
         iou_matrix = ops.box_iou(pred, target)
         iou = iou_matrix.diagonal()
 
@@ -457,10 +357,21 @@ class CNN(nn.Module):
         return 1 - ciou.mean()
 
     def combined_loss(self, pred, target, alpha=0.3, beta=0.7):
+        """
+        Calculate the combined loss which is a weighted sum of Smooth L1 Loss and IoU Loss.
+
+        Args:
+            pred (torch.Tensor): The predicted values from the model.
+            target (torch.Tensor): The ground truth values.
+            alpha (float, optional): The weight for the Smooth L1 Loss. Default is 0.3.
+            beta (float, optional): The weight for the IoU Loss. Default is 0.7.
+
+        Returns:
+            torch.Tensor: The combined loss value.
+        """
         Smooth_L1_loss = nn.SmoothL1Loss()(pred, target)
         IoU_Loss = self.ciou_loss(pred, target)
-        combined_loss = alpha * (Smooth_L1_loss) + beta * (IoU_Loss)
-        return combined_loss
+        return alpha * (Smooth_L1_loss) + beta * (IoU_Loss)
 
 # ---------------------------------------------------------------------
 #  Model Training and Validation
@@ -493,21 +404,20 @@ def train_model(model, train_loader, optimizer, criterion, num_epochs, device, e
         logging.debug(f"Batch {batch_idx + 1}: Loading data")
         images, targets = images.to(device), targets.to(device)
         logging.debug(f"Batch {batch_idx + 1}: Data shapes - Images: {images.shape}, Targets: {targets.shape}")
+        logging.debug(f"Batch {batch_idx + 1}: Input - {targets}")
         
         optimizer.zero_grad()  # Zero out gradients
-        logging.debug(f"Batch {batch_idx + 1}: Forward pass")
         outputs = model(images)  # Forward Propagation
-        logging.debug(f"Batch {batch_idx + 1}: Output shape - {outputs.shape}")
+        logging.debug(f"Batch {batch_idx + 1}: Output - {outputs}")
         
         loss = criterion(outputs, targets)  # Compute loss
-        logging.debug(f"Batch {batch_idx + 1}: Loss computed - {loss.item():.6f}")
+        logging.debug(f"Batch {batch_idx + 1}: Loss - {loss.item():.6f}")
         
         loss.backward()  # Backward Propagation
         optimizer.step()  # Update weights
         
         epoch_loss += loss.item()  # Update epoch loss
-        iou = iou_func(outputs, targets)  # Compute IoU
-        
+        iou = CNN.iou_func(outputs, targets)  # Compute IoU
         epoch_iou += iou  # Update epoch IoU
         num_batches += 1  # Update number of batches
         
@@ -558,7 +468,7 @@ def validate_model(model, val_loader, criterion, num_epochs, device, epoch):
             logging.debug(f"Batch {batch_idx + 1}: Loss computed - {loss.item():.6f}")
             
             epoch_loss += loss.item()  # Update epoch loss
-            iou = iou_func(outputs, targets)  # Compute IoU
+            iou = CNN.iou_func(outputs, targets)  # Compute IoU
             logging.debug(f"Batch {batch_idx + 1}: IoU computed - {iou:.6f}")
             
             epoch_iou += iou  # Update epoch IoU
@@ -607,29 +517,24 @@ def generate_predictions(model, val_dataset, device, output_folder, num_images=1
 
             # Prepare inputs
             image_input = image.unsqueeze(0).to(device)  # Add batch dimension
-
-            # Get predictions
-            pred_bbox = model(image_input)[0].to(device)  # Predicted bounding box in (cx, cy, w, h)
-            # pred_bbox = clamp_bbox_centerwh(pred_bbox.unsqueeze(0))[0]  # Clamp predictions to [0,1]
-            pred_corner = center_to_corner(pred_bbox.unsqueeze(0))[0]  # Convert to (x_min, y_min, x_max, y_max)
+            pred_bbox = model(image_input)[0].to(device)  # Predicted bounding boxes
 
             # Denormalize the image for visualization
             image_denorm = image * std[:, None, None] + mean[:, None, None]
             pil_image = transforms.ToPILImage()(image_denorm).convert('RGB')
 
             width, height = pil_image.size
-            x_min, y_min, x_max, y_max = pred_corner
+            x_min, y_min, x_max, y_max = pred_bbox
             x_min, x_max = x_min * width, x_max * width
             y_min, y_max = y_min * height, y_max * height
 
-            true_corner = center_to_corner(true_bbox.unsqueeze(0))[0]
-            x_min_t, y_min_t, x_max_t, y_max_t = true_corner
+            x_min_t, y_min_t, x_max_t, y_max_t = (true_bbox.unsqueeze(0))[0]
             x_min_t, x_max_t = x_min_t * width, x_max_t * width
             y_min_t, y_max_t = y_min_t * height, y_max_t * height
 
             draw = ImageDraw.Draw(pil_image)
-            draw.rectangle([x_min, y_min, x_max, y_max], outline='red', width=3)
-            draw.rectangle([x_min_t, y_min_t, x_max_t, y_max_t], outline='green', width=3)
+            draw.rectangle([x_min, y_min, x_max, y_max], outline='red', width=2)
+            draw.rectangle([x_min_t, y_min_t, x_max_t, y_max_t], outline='green', width=2)
 
             ax = axs[idx // grid_size, idx % grid_size]
             ax.imshow(pil_image)
@@ -763,10 +668,10 @@ def main(lr=0.001, batch_size=16, num_epochs=3, pixel_size=512, reduce_data=Fals
 
     # Model Initialization
     logging.debug("Initializing model and optimizer")
-    model = CNN()
+    model = CNN(pixel_size)
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-    criterion = model.combined_loss
+    criterion = model.ciou_loss
 
     # Training Loop
     logging.debug("Starting CNN training")
@@ -820,4 +725,4 @@ if __name__ == "__main__":
     # main(lr=1e-3, batch_size=4, num_epochs=1, pixel_size=256, reduce_data=True)
     
     # Production Setup
-    main(lr=1e-3, batch_size=32, num_epochs=100, pixel_size=512, reduce_data=False)
+    main(lr=1e-3, batch_size=16, num_epochs=10, pixel_size=512, reduce_data=False)

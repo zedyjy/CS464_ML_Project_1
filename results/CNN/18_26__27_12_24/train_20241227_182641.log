@@ -1,0 +1,5 @@
+2024-12-27 18:26:41,837 - INFO - Using device: cuda
+2024-12-27 18:27:51,835 - INFO - New best model saved at epoch 1
+2024-12-27 18:27:51,836 - INFO - Epoch 1: Train Loss: 15.0109, Train IoU: 0.0000
+2024-12-27 18:27:51,836 - INFO - Epoch 1: Validation Loss: 9.2322, Validation IoU: 0.0000
+2024-12-27 18:28:07,552 - INFO - Training completed successfully
