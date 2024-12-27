@@ -1,0 +1,18 @@
+2024-12-27 02:40:46,516 - DEBUG - Starting main function
+2024-12-27 02:40:46,516 - DEBUG - Initializing data processing
+2024-12-27 02:40:46,517 - DEBUG - Loading datasets
+2024-12-27 02:40:46,640 - DEBUG - Initialized processData with 5815 images, 5815 GeoJSON files, and 5815 auxiliary files.
+2024-12-27 02:40:46,702 - DEBUG - Initialized processData with 2710 images, 2710 GeoJSON files, and 2710 auxiliary files.
+2024-12-27 02:40:46,703 - DEBUG - Reducing dataset size
+2024-12-27 02:40:46,703 - DEBUG - Dataset length: 5815
+2024-12-27 02:40:46,703 - DEBUG - Dataset length: 2710
+2024-12-27 02:40:46,703 - DEBUG - Dataset length: 5815
+2024-12-27 02:40:46,703 - DEBUG - Dataset length: 5815
+2024-12-27 02:40:46,704 - DEBUG - Dataset length: 2710
+2024-12-27 02:40:46,704 - DEBUG - Dataset length: 2710
+2024-12-27 02:40:46,704 - DEBUG - Initializing model and optimizer
+2024-12-27 02:40:46,705 - INFO - Using device: cpu
+2024-12-27 02:40:47,004 - DEBUG - Starting training loop
+2024-12-27 02:40:47,005 - DEBUG - Starting epoch 1/1
+2024-12-27 02:40:47,005 - DEBUG - Starting training for epoch 1/1
+2024-12-27 02:40:47,012 - DEBUG - Loaded backend macosx version unknown.

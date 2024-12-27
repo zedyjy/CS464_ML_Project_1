@@ -1,0 +1,14 @@
+2024-12-27 02:40:52,513 - DEBUG - Starting main function
+2024-12-27 02:40:52,514 - DEBUG - Initializing data processing
+2024-12-27 02:40:52,514 - DEBUG - Loading datasets
+2024-12-27 02:40:52,543 - DEBUG - Initialized processData with 5815 images, 5815 GeoJSON files, and 5815 auxiliary files.
+2024-12-27 02:40:52,556 - DEBUG - Initialized processData with 2710 images, 2710 GeoJSON files, and 2710 auxiliary files.
+2024-12-27 02:40:52,556 - DEBUG - Reducing dataset size
+2024-12-27 02:40:52,556 - DEBUG - Dataset length: 5815
+2024-12-27 02:40:52,556 - DEBUG - Dataset length: 2710
+2024-12-27 02:40:52,556 - DEBUG - Dataset length: 5815
+2024-12-27 02:40:52,556 - DEBUG - Dataset length: 5815
+2024-12-27 02:40:52,556 - DEBUG - Dataset length: 2710
+2024-12-27 02:40:52,556 - DEBUG - Dataset length: 2710
+2024-12-27 02:40:52,557 - DEBUG - Initializing model and optimizer
+2024-12-27 02:40:52,557 - INFO - Using device: cpu

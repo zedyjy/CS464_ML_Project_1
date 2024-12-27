@@ -1,0 +1,36 @@
+2024-12-27 01:58:42,945 - DEBUG - Starting main function
+2024-12-27 01:58:42,946 - DEBUG - Initializing data processing
+2024-12-27 01:58:42,946 - DEBUG - Loading datasets
+2024-12-27 01:58:43,070 - DEBUG - Initialized processData with 5815 images, 5815 GeoJSON files, and 5815 auxiliary files.
+2024-12-27 01:58:43,133 - DEBUG - Initialized processData with 2710 images, 2710 GeoJSON files, and 2710 auxiliary files.
+2024-12-27 01:58:43,133 - DEBUG - Reducing dataset size
+2024-12-27 01:58:43,133 - DEBUG - Dataset length: 5815
+2024-12-27 01:58:43,133 - DEBUG - Dataset length: 2710
+2024-12-27 01:58:43,133 - DEBUG - Dataset length: 5815
+2024-12-27 01:58:43,133 - DEBUG - Dataset length: 5815
+2024-12-27 01:58:43,141 - DEBUG - Dataset length: 2710
+2024-12-27 01:58:43,142 - DEBUG - Dataset length: 2710
+2024-12-27 01:58:43,142 - DEBUG - Initializing model and optimizer
+2024-12-27 01:58:43,142 - INFO - Using device: cpu
+2024-12-27 01:58:43,464 - DEBUG - Starting training loop
+2024-12-27 01:58:43,464 - DEBUG - Starting epoch 1/1
+2024-12-27 01:58:43,464 - DEBUG - Starting training for epoch 1/1
+2024-12-27 01:58:43,490 - DEBUG - Loaded backend macosx version unknown.
+2024-12-27 01:58:46,852 - DEBUG - Processing index 799:
+2024-12-27 01:58:46,852 - DEBUG - Image path: ./data/raw/train/PS-RGB_tiled/118_104001003C1B4D00_tile_856.png
+2024-12-27 01:58:46,852 - DEBUG - Label path: ./data/raw/train/geojson_aircraft_tiled/118_104001003C1B4D00_tile_856.geojson
+2024-12-27 01:58:46,852 - DEBUG - Auxiliary path: ./data/raw/train/PS-RGB_tiled/118_104001003C1B4D00_tile_856.png.aux.xml
+2024-12-27 01:58:46,853 - DEBUG - Parsing GeoTransform from: ./data/raw/train/PS-RGB_tiled/118_104001003C1B4D00_tile_856.png.aux.xml
+2024-12-27 01:58:46,854 - DEBUG - GeoTransform parsed: [-87.88867866600701, 3.2620073754590123e-06, 0.0, 42.9423926466941, 0.0, -3.2620073754590123e-06]
+2024-12-27 01:58:46,854 - DEBUG - Reading GeoJSON from: ./data/raw/train/geojson_aircraft_tiled/118_104001003C1B4D00_tile_856.geojson
+2024-12-27 01:58:46,854 - DEBUG - First feature coordinates: [[[-87.88843788610203, 42.94094527624839], [-87.88809527500642, 42.94110031255423], [-87.88793832467212, 42.94090316762212], [-87.8881488678035, 42.94072516297469], [-87.88843788610203, 42.94094527624839]]]
+2024-12-27 01:58:46,855 - DEBUG - Feature properties: {'loc_id': 118, 'cat_id': '104001003C1B4D00', 'location': 'Trituration Building, Bus Parking Only, Milwaukee, Milwaukee County, Wisconsin, 53207-6127, USA', 'role': 'Military Transport/Utility/AWAC', 'role_id': 4, 'is_plane': 1, 'num_engines': 4, 'propulsion': 'jet', 'canards': 'no', 'num_tail_fins': 1, 'wing_position': 'mid/low mounted', 'wing_type': 'swept', 'length': 41.02742863536429, 'wingspan': 41.89082897823716, 'area': 859.2964400281354, 'faa_wingspan_class': 4, 'Public_Train': 1, 'Public_Test': 0, 'partialDec': 1.0, 'truncated': 0, 'new_area': 859.2964400281354}
+2024-12-27 01:58:46,855 - DEBUG - GeoJSON Coords: [(-87.88843788610203, 42.94094527624839), (-87.88809527500642, 42.94110031255423), (-87.88793832467212, 42.94090316762212), (-87.8881488678035, 42.94072516297469), (-87.88843788610203, 42.94094527624839)]
+2024-12-27 01:58:46,855 - DEBUG - GeoJSON Features: [41.02742863536429, 41.89082897823716, 859.2964400281354, 1, 1, 0, 4, 1, 4]
+2024-12-27 01:58:46,855 - DEBUG - Parsed GeoTransform: [-87.88867866600701, 3.2620073754590123e-06, 0.0, 42.9423926466941, 0.0, -3.2620073754590123e-06]
+2024-12-27 01:58:46,855 - DEBUG - Parsed GeoJSON coordinates: [(-87.88843788610203, 42.94094527624839), (-87.88809527500642, 42.94110031255423), (-87.88793832467212, 42.94090316762212), (-87.8881488678035, 42.94072516297469), (-87.88843788610203, 42.94094527624839)]
+2024-12-27 01:58:46,866 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 01:58:46,866 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 01:58:46,866 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 01:58:46,884 - DEBUG - Loaded image size: 512x512
+2024-12-27 01:58:46,885 - DEBUG - Converting GeoJSON to pixel bounding boxes.

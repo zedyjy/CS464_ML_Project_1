@@ -1,0 +1,71 @@
+2024-12-27 01:49:30,708 - DEBUG - Starting main function
+2024-12-27 01:49:30,708 - DEBUG - Initializing data processing
+2024-12-27 01:49:30,709 - DEBUG - Loading datasets
+2024-12-27 01:49:30,831 - DEBUG - Initialized processData with 5815 images, 5815 GeoJSON files, and 5815 auxiliary files.
+2024-12-27 01:49:30,894 - DEBUG - Initialized processData with 2710 images, 2710 GeoJSON files, and 2710 auxiliary files.
+2024-12-27 01:49:30,895 - DEBUG - Reducing dataset size
+2024-12-27 01:49:30,895 - DEBUG - Dataset length: 5815
+2024-12-27 01:49:30,895 - DEBUG - Dataset length: 2710
+2024-12-27 01:49:30,895 - DEBUG - Dataset length: 5815
+2024-12-27 01:49:30,895 - DEBUG - Dataset length: 5815
+2024-12-27 01:49:30,901 - DEBUG - Dataset length: 2710
+2024-12-27 01:49:30,901 - DEBUG - Dataset length: 2710
+2024-12-27 01:49:30,902 - DEBUG - Initializing model and optimizer
+2024-12-27 01:49:30,902 - INFO - Using device: cpu
+2024-12-27 01:49:31,220 - DEBUG - Starting training loop
+2024-12-27 01:49:31,220 - DEBUG - Starting epoch 1/1
+2024-12-27 01:49:31,220 - DEBUG - Starting training for epoch 1/1
+2024-12-27 01:49:31,228 - DEBUG - Loaded backend macosx version unknown.
+2024-12-27 01:49:36,117 - DEBUG - Processing index 4098:
+2024-12-27 01:49:36,117 - DEBUG - Image path: ./data/raw/train/PS-RGB_tiled/65_10400100415CB400_tile_85.png
+2024-12-27 01:49:36,117 - DEBUG - Label path: ./data/raw/train/geojson_aircraft_tiled/65_10400100415CB400_tile_85.geojson
+2024-12-27 01:49:36,117 - DEBUG - Auxiliary path: ./data/raw/train/PS-RGB_tiled/65_10400100415CB400_tile_85.png.aux.xml
+2024-12-27 01:49:36,118 - DEBUG - Parsing GeoTransform from: ./data/raw/train/PS-RGB_tiled/65_10400100415CB400_tile_85.png.aux.xml
+2024-12-27 01:49:36,118 - DEBUG - GeoTransform parsed: [-105.16000947350659, 3.2743592106156553e-06, 0.0, 40.1645512355746, 0.0, -3.2743592106156553e-06]
+2024-12-27 01:49:36,119 - DEBUG - Reading GeoJSON from: ./data/raw/train/geojson_aircraft_tiled/65_10400100415CB400_tile_85.geojson
+2024-12-27 01:49:36,119 - DEBUG - First feature coordinates: [[[-105.16000947350659, 40.1640873276443], [-105.1599890781286, 40.164101715081486], [-105.15995979771344, 40.16402390137544], [-105.16000947350659, 40.16401907457772], [-105.16000947350659, 40.1640873276443]]]
+2024-12-27 01:49:36,119 - DEBUG - Feature properties: {'loc_id': 65, 'cat_id': '10400100415CB400', 'location': 'Longmont Vance Brand Municipal Airport, Saint Vrain Road, Longmont, Boulder County, Colorado, 80533, USA', 'role': 'Small Civil Transport/Utility', 'role_id': 1, 'is_plane': 1, 'num_engines': 1, 'propulsion': 'propeller', 'canards': 'no', 'num_tail_fins': 1, 'wing_position': 'high mounted', 'wing_type': 'straight', 'length': 8.284330287592432, 'wingspan': 11.380404018117698, 'area': 47.10703060164701, 'faa_wingspan_class': 1, 'Public_Train': 1, 'Public_Test': 0, 'partialDec': 0.5416190713120613, 'truncated': 1, 'new_area': 25.514066166732906}
+2024-12-27 01:49:36,120 - DEBUG - GeoJSON Coords: [(-105.16000947350659, 40.1640873276443), (-105.1599890781286, 40.164101715081486), (-105.15995979771344, 40.16402390137544), (-105.16000947350659, 40.16401907457772), (-105.16000947350659, 40.1640873276443)]
+2024-12-27 01:49:36,120 - DEBUG - GeoJSON Features: [8.284330287592432, 11.380404018117698, 47.10703060164701, 0, 0, 0, 1, 1, 1]
+2024-12-27 01:49:36,120 - DEBUG - Parsed GeoTransform: [-105.16000947350659, 3.2743592106156553e-06, 0.0, 40.1645512355746, 0.0, -3.2743592106156553e-06]
+2024-12-27 01:49:36,120 - DEBUG - Parsed GeoJSON coordinates: [(-105.16000947350659, 40.1640873276443), (-105.1599890781286, 40.164101715081486), (-105.15995979771344, 40.16402390137544), (-105.16000947350659, 40.16401907457772), (-105.16000947350659, 40.1640873276443)]
+2024-12-27 01:49:36,131 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 01:49:36,131 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 01:49:36,131 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 01:49:36,149 - DEBUG - Loaded image size: 512x512
+2024-12-27 01:49:36,150 - DEBUG - Converting GeoJSON to pixel bounding boxes.
+2024-12-27 01:49:42,769 - DEBUG - Input Coordinates: [(-105.16000947350659, 40.1640873276443), (-105.1599890781286, 40.164101715081486), (-105.15995979771344, 40.16402390137544), (-105.16000947350659, 40.16401907457772), (-105.16000947350659, 40.1640873276443)]
+2024-12-27 01:49:42,770 - DEBUG - GeoTransform: [-105.16000947350659, 3.2743592106156553e-06, 0.0, 40.1645512355746, 0.0, -3.2743592106156553e-06]
+2024-12-27 01:49:42,770 - DEBUG - Image Dimensions: width=512, height=512
+2024-12-27 01:49:42,771 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:49:42,771 - DEBUG - Inputs - lon: -105.16000947350659, lat: 40.1640873276443, geo_transform: [-105.16000947350659, 3.2743592106156553e-06, 0.0, 40.1645512355746, 0.0, -3.2743592106156553e-06], image_width: 512, image_height: 512
+2024-12-27 01:49:42,773 - DEBUG - Parsed GeoTransform - x_origin: -105.16000947350659, pixel_width: 3.2743592106156553e-06, y_origin: 40.1645512355746, pixel_height: -3.2743592106156553e-06
+2024-12-27 01:49:42,773 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 0, y_pixel: 141
+2024-12-27 01:49:42,773 - DEBUG - Clamped pixel coordinates - x_pixel: 0, y_pixel: 141
+2024-12-27 01:49:42,774 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:49:42,774 - DEBUG - Inputs - lon: -105.1599890781286, lat: 40.164101715081486, geo_transform: [-105.16000947350659, 3.2743592106156553e-06, 0.0, 40.1645512355746, 0.0, -3.2743592106156553e-06], image_width: 512, image_height: 512
+2024-12-27 01:49:42,774 - DEBUG - Parsed GeoTransform - x_origin: -105.16000947350659, pixel_width: 3.2743592106156553e-06, y_origin: 40.1645512355746, pixel_height: -3.2743592106156553e-06
+2024-12-27 01:49:42,774 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 6, y_pixel: 137
+2024-12-27 01:49:42,775 - DEBUG - Clamped pixel coordinates - x_pixel: 6, y_pixel: 137
+2024-12-27 01:49:42,775 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:49:42,775 - DEBUG - Inputs - lon: -105.15995979771344, lat: 40.16402390137544, geo_transform: [-105.16000947350659, 3.2743592106156553e-06, 0.0, 40.1645512355746, 0.0, -3.2743592106156553e-06], image_width: 512, image_height: 512
+2024-12-27 01:49:42,775 - DEBUG - Parsed GeoTransform - x_origin: -105.16000947350659, pixel_width: 3.2743592106156553e-06, y_origin: 40.1645512355746, pixel_height: -3.2743592106156553e-06
+2024-12-27 01:49:42,775 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 15, y_pixel: 161
+2024-12-27 01:49:42,775 - DEBUG - Clamped pixel coordinates - x_pixel: 15, y_pixel: 161
+2024-12-27 01:49:42,776 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:49:42,776 - DEBUG - Inputs - lon: -105.16000947350659, lat: 40.16401907457772, geo_transform: [-105.16000947350659, 3.2743592106156553e-06, 0.0, 40.1645512355746, 0.0, -3.2743592106156553e-06], image_width: 512, image_height: 512
+2024-12-27 01:49:42,776 - DEBUG - Parsed GeoTransform - x_origin: -105.16000947350659, pixel_width: 3.2743592106156553e-06, y_origin: 40.1645512355746, pixel_height: -3.2743592106156553e-06
+2024-12-27 01:49:42,776 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 0, y_pixel: 162
+2024-12-27 01:49:42,776 - DEBUG - Clamped pixel coordinates - x_pixel: 0, y_pixel: 162
+2024-12-27 01:49:42,777 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:49:42,777 - DEBUG - Inputs - lon: -105.16000947350659, lat: 40.1640873276443, geo_transform: [-105.16000947350659, 3.2743592106156553e-06, 0.0, 40.1645512355746, 0.0, -3.2743592106156553e-06], image_width: 512, image_height: 512
+2024-12-27 01:49:42,777 - DEBUG - Parsed GeoTransform - x_origin: -105.16000947350659, pixel_width: 3.2743592106156553e-06, y_origin: 40.1645512355746, pixel_height: -3.2743592106156553e-06
+2024-12-27 01:49:42,778 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 0, y_pixel: 141
+2024-12-27 01:49:42,778 - DEBUG - Clamped pixel coordinates - x_pixel: 0, y_pixel: 141
+2024-12-27 01:49:42,778 - DEBUG - Pixel Coordinates: [(0, 141), (6, 137), (15, 161), (0, 162), (0, 141)]
+2024-12-27 01:49:42,779 - DEBUG - Pixel Bounding Box: x_min=0, x_max=15, y_min=137, y_max=162
+2024-12-27 01:50:03,969 - DEBUG - Normalazing bounding boxes to [0,1].
+2024-12-27 01:50:07,518 - DEBUG - Input Bounding Boxes: (0, 137, 15, 162)
+2024-12-27 01:50:07,520 - DEBUG - Input is <class 'tuple'>. Converting to tensor.
+2024-12-27 01:50:07,527 - DEBUG - x_min: 0.0, y_min: 137.0, x_max: 15.0, y_max: 162.0
+2024-12-27 01:50:07,555 - DEBUG - Normalized Bounding Boxes: tensor([[  0., 137.,  15., 162.]])

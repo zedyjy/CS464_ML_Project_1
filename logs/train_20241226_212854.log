@@ -1,0 +1,24 @@
+2024-12-26 21:28:54,437 - DEBUG - Starting main function
+2024-12-26 21:28:54,437 - DEBUG - Initializing data processing
+2024-12-26 21:28:54,437 - DEBUG - Loading datasets
+2024-12-26 21:28:54,543 - DEBUG - Loaded backend macosx version unknown.
+2024-12-26 21:29:11,222 - DEBUG - Initialized processData with 5815 images, 5815 GeoJSON files, and 5815 auxiliary files.
+2024-12-26 21:29:14,288 - DEBUG - Initialized processData with 2710 images, 2710 GeoJSON files, and 2710 auxiliary files.
+2024-12-26 21:29:14,289 - DEBUG - Reducing dataset size
+2024-12-26 21:29:14,290 - DEBUG - Dataset length: 5815
+2024-12-26 21:29:16,508 - DEBUG - Dataset length: 2710
+2024-12-26 21:29:16,969 - DEBUG - Dataset length: 5815
+2024-12-26 21:29:17,386 - DEBUG - Dataset length: 5815
+2024-12-26 21:29:17,774 - DEBUG - Dataset length: 2710
+2024-12-26 21:29:18,139 - DEBUG - Dataset length: 2710
+2024-12-26 21:29:18,410 - DEBUG - Initializing model and optimizer
+2024-12-26 21:29:18,411 - INFO - Using device: cpu
+2024-12-26 21:29:18,632 - DEBUG - Starting training loop
+2024-12-26 21:29:18,632 - DEBUG - Starting epoch 1/1
+2024-12-26 21:29:18,632 - DEBUG - Starting training for epoch 1/1
+2024-12-26 21:29:18,647 - DEBUG - Processing index 3002:
+2024-12-26 21:29:18,647 - DEBUG - Image path: ./data/raw/train/PS-RGB_tiled/51_104001003D4C9C00_tile_274.png
+2024-12-26 21:29:18,647 - DEBUG - Label path: ./data/raw/train/geojson_aircraft_tiled/51_104001003D4C9C00_tile_274.geojson
+2024-12-26 21:29:18,647 - DEBUG - Auxiliary path: ./data/raw/train/PS-RGB_tiled/51_104001003D4C9C00_tile_274.png.aux.xml
+2024-12-26 21:29:18,647 - DEBUG - Parsing GeoTransform from: ./data/raw/train/PS-RGB_tiled/51_104001003D4C9C00_tile_274.png.aux.xml
+2024-12-26 21:29:18,648 - DEBUG - GeoTransform parsed: [-80.26931438832, 3.159262564837841e-06, 0.0, 25.91101605281773, 0.0, -3.159262564837841e-06]

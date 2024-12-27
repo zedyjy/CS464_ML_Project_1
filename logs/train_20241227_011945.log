@@ -1,0 +1,69 @@
+2024-12-27 01:19:45,386 - DEBUG - Starting main function
+2024-12-27 01:19:45,386 - DEBUG - Initializing data processing
+2024-12-27 01:19:45,387 - DEBUG - Loading datasets
+2024-12-27 01:19:45,509 - DEBUG - Initialized processData with 5815 images, 5815 GeoJSON files, and 5815 auxiliary files.
+2024-12-27 01:19:45,572 - DEBUG - Initialized processData with 2710 images, 2710 GeoJSON files, and 2710 auxiliary files.
+2024-12-27 01:19:45,572 - DEBUG - Reducing dataset size
+2024-12-27 01:19:45,572 - DEBUG - Dataset length: 5815
+2024-12-27 01:19:45,572 - DEBUG - Dataset length: 2710
+2024-12-27 01:19:45,572 - DEBUG - Dataset length: 5815
+2024-12-27 01:19:45,572 - DEBUG - Dataset length: 5815
+2024-12-27 01:19:45,573 - DEBUG - Dataset length: 2710
+2024-12-27 01:19:45,573 - DEBUG - Dataset length: 2710
+2024-12-27 01:19:45,574 - DEBUG - Initializing model and optimizer
+2024-12-27 01:19:45,574 - INFO - Using device: cpu
+2024-12-27 01:19:45,882 - DEBUG - Loaded backend macosx version unknown.
+2024-12-27 01:20:03,374 - DEBUG - Starting training loop
+2024-12-27 01:20:03,375 - DEBUG - Starting epoch 1/1
+2024-12-27 01:20:04,824 - DEBUG - Starting training for epoch 1/1
+2024-12-27 01:20:06,774 - DEBUG - Processing index 5388:
+2024-12-27 01:20:06,774 - DEBUG - Image path: ./data/raw/train/PS-RGB_tiled/96_104001000896F900_tile_972.png
+2024-12-27 01:20:06,774 - DEBUG - Label path: ./data/raw/train/geojson_aircraft_tiled/96_104001000896F900_tile_972.geojson
+2024-12-27 01:20:06,774 - DEBUG - Auxiliary path: ./data/raw/train/PS-RGB_tiled/96_104001000896F900_tile_972.png.aux.xml
+2024-12-27 01:20:06,774 - DEBUG - Parsing GeoTransform from: ./data/raw/train/PS-RGB_tiled/96_104001000896F900_tile_972.png.aux.xml
+2024-12-27 01:20:06,775 - DEBUG - GeoTransform parsed: [-147.8517108847622, 3.3372412805040225e-06, 0.0, 64.81481490081788, 0.0, -3.3372412805040225e-06]
+2024-12-27 01:20:06,775 - DEBUG - Reading GeoJSON from: ./data/raw/train/geojson_aircraft_tiled/96_104001000896F900_tile_972.geojson
+2024-12-27 01:20:06,776 - DEBUG - First feature coordinates: [[[-147.8516389702579, 64.81475644070427], [-147.8517108847622, 64.8147392077355], [-147.8517108847622, 64.81480742117144], [-147.8515953809259, 64.81480434106913], [-147.8516389702579, 64.81475644070427]]]
+2024-12-27 01:20:06,776 - DEBUG - Feature properties: {'loc_id': 96, 'cat_id': '104001000896F900', 'location': 'Fairbanks International Airport, Old Airport Way, Broadmoor, Fairbanks North Star, Alaska, 99709, USA', 'role': 'Small Civil Transport/Utility', 'role_id': 1, 'is_plane': 1, 'num_engines': 1, 'propulsion': 'propeller', 'canards': 'no', 'num_tail_fins': 1, 'wing_position': 'mid/low mounted', 'wing_type': 'straight', 'length': 7.472479772948443, 'wingspan': 10.720010735627536, 'area': 39.48127710330891, 'faa_wingspan_class': 1, 'Public_Train': 1, 'Public_Test': 0, 'partialDec': 0.7085520297485886, 'truncated': 1, 'new_area': 27.974539028616004}
+2024-12-27 01:20:06,776 - DEBUG - GeoJSON Coords: [(-147.8516389702579, 64.81475644070427), (-147.8517108847622, 64.8147392077355), (-147.8517108847622, 64.81480742117144), (-147.8515953809259, 64.81480434106913), (-147.8516389702579, 64.81475644070427)]
+2024-12-27 01:20:06,777 - DEBUG - GeoJSON Features: [7.472479772948443, 10.720010735627536, 39.48127710330891, 0, 1, 0, 1, 1, 1]
+2024-12-27 01:20:06,777 - DEBUG - Parsed GeoTransform: [-147.8517108847622, 3.3372412805040225e-06, 0.0, 64.81481490081788, 0.0, -3.3372412805040225e-06]
+2024-12-27 01:20:06,777 - DEBUG - Parsed GeoJSON coordinates: [(-147.8516389702579, 64.81475644070427), (-147.8517108847622, 64.8147392077355), (-147.8517108847622, 64.81480742117144), (-147.8515953809259, 64.81480434106913), (-147.8516389702579, 64.81475644070427)]
+2024-12-27 01:20:06,788 - DEBUG - STREAM b'IHDR' 16 13
+2024-12-27 01:20:06,788 - DEBUG - STREAM b'tRNS' 41 6
+2024-12-27 01:20:06,788 - DEBUG - STREAM b'IDAT' 59 8192
+2024-12-27 01:20:06,805 - DEBUG - Loaded image size: 512x512
+2024-12-27 01:20:06,805 - DEBUG - Converting GeoJSON to pixel bounding boxes.
+2024-12-27 01:20:06,805 - DEBUG - Input Coordinates: [(-147.8516389702579, 64.81475644070427), (-147.8517108847622, 64.8147392077355), (-147.8517108847622, 64.81480742117144), (-147.8515953809259, 64.81480434106913), (-147.8516389702579, 64.81475644070427)] ... (showing first 5 for brevity)
+2024-12-27 01:20:06,805 - DEBUG - GeoTransform: [-147.8517108847622, 3.3372412805040225e-06, 0.0, 64.81481490081788, 0.0, -3.3372412805040225e-06]
+2024-12-27 01:20:06,805 - DEBUG - Image Dimensions: width=512, height=512
+2024-12-27 01:20:06,805 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:20:06,806 - DEBUG - Inputs - lon: -147.8516389702579, lat: 64.81475644070427, geo_transform: [-147.8517108847622, 3.3372412805040225e-06, 0.0, 64.81481490081788, 0.0, -3.3372412805040225e-06], image_width: 512, image_height: 512
+2024-12-27 01:20:06,806 - DEBUG - Parsed GeoTransform - x_origin: -147.8517108847622, pixel_width: 3.3372412805040225e-06, y_origin: 64.81481490081788, pixel_height: -3.3372412805040225e-06
+2024-12-27 01:20:06,806 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 21, y_pixel: 17
+2024-12-27 01:20:06,806 - DEBUG - Clamped pixel coordinates - x_pixel: 21, y_pixel: 17
+2024-12-27 01:20:06,806 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:20:06,806 - DEBUG - Inputs - lon: -147.8517108847622, lat: 64.8147392077355, geo_transform: [-147.8517108847622, 3.3372412805040225e-06, 0.0, 64.81481490081788, 0.0, -3.3372412805040225e-06], image_width: 512, image_height: 512
+2024-12-27 01:20:06,807 - DEBUG - Parsed GeoTransform - x_origin: -147.8517108847622, pixel_width: 3.3372412805040225e-06, y_origin: 64.81481490081788, pixel_height: -3.3372412805040225e-06
+2024-12-27 01:20:06,807 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 0, y_pixel: 22
+2024-12-27 01:20:06,807 - DEBUG - Clamped pixel coordinates - x_pixel: 0, y_pixel: 22
+2024-12-27 01:20:06,807 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:20:06,807 - DEBUG - Inputs - lon: -147.8517108847622, lat: 64.81480742117144, geo_transform: [-147.8517108847622, 3.3372412805040225e-06, 0.0, 64.81481490081788, 0.0, -3.3372412805040225e-06], image_width: 512, image_height: 512
+2024-12-27 01:20:06,807 - DEBUG - Parsed GeoTransform - x_origin: -147.8517108847622, pixel_width: 3.3372412805040225e-06, y_origin: 64.81481490081788, pixel_height: -3.3372412805040225e-06
+2024-12-27 01:20:06,807 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 0, y_pixel: 2
+2024-12-27 01:20:06,808 - DEBUG - Clamped pixel coordinates - x_pixel: 0, y_pixel: 2
+2024-12-27 01:20:06,808 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:20:06,808 - DEBUG - Inputs - lon: -147.8515953809259, lat: 64.81480434106913, geo_transform: [-147.8517108847622, 3.3372412805040225e-06, 0.0, 64.81481490081788, 0.0, -3.3372412805040225e-06], image_width: 512, image_height: 512
+2024-12-27 01:20:06,808 - DEBUG - Parsed GeoTransform - x_origin: -147.8517108847622, pixel_width: 3.3372412805040225e-06, y_origin: 64.81481490081788, pixel_height: -3.3372412805040225e-06
+2024-12-27 01:20:06,808 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 34, y_pixel: 3
+2024-12-27 01:20:06,808 - DEBUG - Clamped pixel coordinates - x_pixel: 34, y_pixel: 3
+2024-12-27 01:20:06,808 - DEBUG - Converting geo-coordinates to pixel coordinates:
+2024-12-27 01:20:06,808 - DEBUG - Inputs - lon: -147.8516389702579, lat: 64.81475644070427, geo_transform: [-147.8517108847622, 3.3372412805040225e-06, 0.0, 64.81481490081788, 0.0, -3.3372412805040225e-06], image_width: 512, image_height: 512
+2024-12-27 01:20:06,808 - DEBUG - Parsed GeoTransform - x_origin: -147.8517108847622, pixel_width: 3.3372412805040225e-06, y_origin: 64.81481490081788, pixel_height: -3.3372412805040225e-06
+2024-12-27 01:20:06,809 - DEBUG - Computed pixel coordinates before clamping - x_pixel: 21, y_pixel: 17
+2024-12-27 01:20:06,809 - DEBUG - Clamped pixel coordinates - x_pixel: 21, y_pixel: 17
+2024-12-27 01:20:06,809 - DEBUG - Pixel Coordinates: [(21, 17), (0, 22), (0, 2), (34, 3), (21, 17)] ... (showing first 5 for brevity)
+2024-12-27 01:20:06,810 - DEBUG - Pixel Bounding Box: x_min=0, x_max=34, y_min=2, y_max=22
+2024-12-27 01:20:06,810 - DEBUG - Pixel bounding box: (0, 2, 34, 22)
+2024-12-27 01:20:06,810 - DEBUG - Clamping bounding boxes to image boundaries.
+2024-12-27 01:20:06,810 - DEBUG - Input Bounding Boxes: (0, 2, 34, 22)
